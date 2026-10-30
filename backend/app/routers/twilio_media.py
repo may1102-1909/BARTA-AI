@@ -20,18 +20,7 @@ router = APIRouter(prefix="/twilio", tags=["Twilio Voice & Media"])
 twilio_service = TwilioService()
 tts_service = GnaniTimbreTTS()
 
-@router.post("/voice")
-async def twilio_voice_webhook(request: Request):
-    """
-    Twilio voice entrypoint webhook. Returns TwiML connecting the call to the Media Stream.
-    """
-    form_data = await request.form()
-    call_id = request.query_params.get("call_id") or form_data.get("callId", "")
-    contact_id = request.query_params.get("contact_id") or form_data.get("contactId", "")
-    campaign_id = request.query_params.get("campaign_id") or form_data.get("campaignId", "")
-
-    twiml_xml = twilio_service.generate_twiml(call_id or None, contact_id or None, campaign_id or None)
-    return Response(content=twiml_xml, media_type="application/xml")
+# Voice entrypoint is served directly at @app.post("/twilio/voice") in main.py
 
 @router.post("/status")
 async def twilio_status_callback(request: Request):

@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
@@ -58,6 +59,19 @@ app.include_router(callbacks.router)
 app.include_router(public_forms.router)
 app.include_router(twilio_media.router)
 app.include_router(simulator.router)
+
+@app.post("/twilio/voice")
+async def twilio_voice(request: Request):
+    # This TwiML tells Twilio to answer the call and open a WebSocket connection
+    # Replace the URL with your current ngrok domain (use wss:// for secure WebSockets)
+    twiml = """<?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+        <Connect>
+            <Stream url="wss://unstable-roundish-giblet.ngrok-free.dev/twilio/media" />
+        </Connect>
+    </Response>"""
+    
+    return HTMLResponse(content=twiml, media_type="application/xml")
 
 @app.get("/")
 async def root():
