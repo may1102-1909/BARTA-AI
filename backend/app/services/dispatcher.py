@@ -194,3 +194,4 @@ class CampaignDispatcher:
         return None
 
 dispatcher = CampaignDispatcher()
+

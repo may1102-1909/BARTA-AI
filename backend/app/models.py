@@ -141,3 +141,4 @@ class Message(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
     contact = relationship("Contact", back_populates="messages")
+

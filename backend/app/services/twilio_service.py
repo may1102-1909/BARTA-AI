@@ -19,7 +19,7 @@ class TwilioService:
             except Exception as e:
                 logger.error(f"Failed to initialize Twilio client: {e}")
 
-    def generate_twiml(self, call_id: str, contact_id: str, campaign_id: str) -> str:
+    def generate_twiml(self, call_id: Optional[str] = None, contact_id: Optional[str] = None, campaign_id: Optional[str] = None) -> str:
         """
         Generates TwiML connecting the call directly to our bidirectional 
         WebSocket Media Stream endpoint (/twilio/media).
@@ -28,13 +28,16 @@ class TwilioService:
         connect = Connect()
         
         # Build WebSocket URL from configured base URL
-        ws_base = settings.TWILIO_WEBHOOK_URL.replace("https://", "wss://").replace("http://", "ws://")
+        ws_base = settings.TWILIO_WEBHOOK_URL.replace("https://", "wss://").replace("http://", "ws://").rstrip("/")
         stream_url = f"{ws_base}/twilio/media"
         
         stream = Stream(url=stream_url)
-        stream.parameter(name="callId", value=call_id)
-        stream.parameter(name="contactId", value=contact_id)
-        stream.parameter(name="campaignId", value=campaign_id)
+        if call_id:
+            stream.parameter(name="callId", value=call_id)
+        if contact_id:
+            stream.parameter(name="contactId", value=contact_id)
+        if campaign_id:
+            stream.parameter(name="campaignId", value=campaign_id)
         
         connect.append(stream)
         response.append(connect)
@@ -73,3 +76,4 @@ class TwilioService:
         except Exception as e:
             logger.error(f"Twilio call creation failed for {to_phone}: {e}")
             return None
+

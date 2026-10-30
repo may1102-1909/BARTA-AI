@@ -79,3 +79,4 @@ async def cancel_callback(callback_id: str, db: AsyncSession = Depends(get_db)):
     cb.status = "cancelled"
     await db.commit()
     return {"status": "success", "message": "Callback cancelled"}
+

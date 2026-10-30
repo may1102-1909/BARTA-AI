@@ -109,3 +109,4 @@ class EmailService:
 
         logger.info(f"[SIMULATED EMAIL] To: {to_email} | Subject: {subject} | Form Link: {form_url}")
         return True
+

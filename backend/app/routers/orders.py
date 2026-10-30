@@ -71,3 +71,4 @@ async def get_order_detail(order_id: str, db: AsyncSession = Depends(get_db)):
         "product": product,
         "form_url": f"{settings.FRONTEND_URL}/order-form/{order.form_token}"
     }
+

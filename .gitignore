@@ -19,6 +19,9 @@ out/
 
 # Environment variables
 .env
+.env.*
+*.env
+backend/.env
 .env.local
 *.local
 
@@ -31,3 +34,4 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+

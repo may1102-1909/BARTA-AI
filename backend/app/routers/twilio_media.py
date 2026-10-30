@@ -30,7 +30,7 @@ async def twilio_voice_webhook(request: Request):
     contact_id = request.query_params.get("contact_id") or form_data.get("contactId", "")
     campaign_id = request.query_params.get("campaign_id") or form_data.get("campaignId", "")
 
-    twiml_xml = twilio_service.generate_twiml(call_id, contact_id, campaign_id)
+    twiml_xml = twilio_service.generate_twiml(call_id or None, contact_id or None, campaign_id or None)
     return Response(content=twiml_xml, media_type="application/xml")
 
 @router.post("/status")
@@ -195,12 +195,17 @@ async def twilio_media_websocket(websocket: WebSocket):
             if event_type == "start":
                 start_data = data.get("start", {})
                 stream_sid = start_data.get("streamSid")
+                call_sid = start_data.get("callSid")
                 custom_params = start_data.get("customParameters", {})
                 call_id = custom_params.get("callId")
                 contact_id = custom_params.get("contactId")
                 campaign_id = custom_params.get("campaignId")
 
-                logger.info(f"Twilio stream started: streamSid={stream_sid}, callId={call_id}")
+                if not call_id:
+                    import uuid
+                    call_id = str(uuid.uuid4())
+
+                logger.info(f"Twilio stream started: streamSid={stream_sid}, callId={call_id}, callSid={call_sid}")
 
                 # Load contact & product info from DB
                 async with AsyncSessionLocal() as session:
@@ -220,6 +225,35 @@ async def twilio_media_websocket(websocket: WebSocket):
                     if not product:
                         p_all = await session.execute(select(Product))
                         product = p_all.scalars().first()
+
+                    # Fallback contact if none provided
+                    if not contact:
+                        contact = Contact(
+                            campaign_id=campaign.id if campaign else "default-camp",
+                            name="Valued Customer",
+                            phone=start_data.get("from", "+919876543210"),
+                            language="hinglish",
+                            status="dialing"
+                        )
+                        session.add(contact)
+                        await session.commit()
+                        await session.refresh(contact)
+                        contact_id = contact.id
+
+                    # Ensure Call row exists in database
+                    call_check = await session.execute(select(Call).where(Call.id == call_id))
+                    call_row = call_check.scalars().first()
+                    if not call_row:
+                        call_row = Call(
+                            id=call_id,
+                            contact_id=contact.id,
+                            campaign_id=campaign.id if campaign else (campaign_id or "default-camp"),
+                            twilio_sid=call_sid,
+                            status="in-progress",
+                            started_at=datetime.now(timezone.utc)
+                        )
+                        session.add(call_row)
+                        await session.commit()
 
                     # Initialize STT and Agent
                     stt = GnaniPrismaSTT(on_transcript=on_stt_transcript)
@@ -294,3 +328,4 @@ async def twilio_media_websocket(websocket: WebSocket):
 
             if campaign_id:
                 dispatcher.on_call_completed(campaign_id, call_id)
+

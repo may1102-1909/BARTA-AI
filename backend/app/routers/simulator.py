@@ -178,3 +178,4 @@ async def simulated_turn(
         "call_ended": response.get("call_ended", False),
         "transcript": agent.history
     }
+

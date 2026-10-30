@@ -2,6 +2,9 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_env_file_path = os.path.join(_backend_dir, ".env")
+
 class Settings(BaseSettings):
     # App
     HOST: str = "0.0.0.0"
@@ -47,9 +50,10 @@ class Settings(BaseSettings):
     DEFAULT_MAX_CONCURRENT: int = 1
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_env_file_path, "backend/.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
 settings = Settings()
+

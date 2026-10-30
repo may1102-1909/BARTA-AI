@@ -99,3 +99,4 @@ class GnaniPrismaSTT:
         if self.ws and not self.ws.closed:
             await self.ws.close()
             logger.info("Gnani Prisma STT connection closed.")
+

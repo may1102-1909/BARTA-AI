@@ -104,3 +104,4 @@ class GnaniTimbreTTS:
             pcm_bytes.extend(sample_val.to_bytes(2, byteorder="little", signed=True))
 
         return AudioConverter.pcm16_to_ulaw(bytes(pcm_bytes))
+

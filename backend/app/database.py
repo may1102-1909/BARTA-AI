@@ -60,3 +60,4 @@ async def init_db():
             session.add(demo_product)
             await session.commit()
             print("Successfully initialized DB and seeded CURATED demo product.")
+

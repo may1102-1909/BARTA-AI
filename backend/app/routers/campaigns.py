@@ -286,3 +286,4 @@ async def get_campaign_stats(campaign_id: str, db: AsyncSession = Depends(get_db
             "avg_duration_sec": avg_duration
         }
     }
+
