@@ -1,258 +1,177 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import {
-  PhoneCall,
-  Clock,
-  User,
-  Bot,
-  Filter,
-  CheckCircle2,
-  CalendarClock,
-  XCircle,
-  HelpCircle,
-  ArrowRight
-} from "lucide-react";
+import React, { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { PhoneCall, X } from "lucide-react";
 import { api } from "@/lib/api";
+import { usePolling } from "@/lib/hooks";
+import type { CallDetail } from "@/lib/types";
+import { cn, formatDateTime, formatSeconds } from "@/lib/utils";
+import { Card } from "@/components/ui/Card";
+import { StatusChip } from "@/components/ui/Status";
+import { EmptyState, ErrorBanner, Skeleton, TableSkeleton } from "@/components/ui/Feedback";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { FilterSelect } from "@/components/ui/Form";
+import { TranscriptThread } from "@/components/TranscriptThread";
 
-export default function CallsPage() {
-  const [calls, setCalls] = useState<any[]>([]);
-  const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
-  const [callDetail, setCallDetail] = useState<any | null>(null);
-  const [outcomeFilter, setOutcomeFilter] = useState<string>("");
-  const [loadingDetail, setLoadingDetail] = useState(false);
+const OUTCOMES = [
+  ["", "All outcomes"],
+  ["order_confirmed", "Order confirmed"],
+  ["interested", "Interested"],
+  ["callback_requested", "Callback requested"],
+  ["not_interested", "Not interested"],
+  ["do_not_call", "Do not call"],
+  ["no_answer", "No answer"],
+];
 
-  const loadCalls = async () => {
-    try {
-      const data = await api.getCalls({
-        outcome: outcomeFilter || undefined,
-        limit: 100,
-      });
-      setCalls(data);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+function CallsView() {
+  const searchParams = useSearchParams();
+  const [outcome, setOutcome] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("call_id"));
+  const [detail, setDetail] = useState<CallDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const { data, loading, error } = usePolling(() => api.getCalls({ outcome: outcome || undefined, limit: 100 }), [outcome], {
+    intervalMs: 8000,
+  });
+  const calls = data ?? [];
 
   useEffect(() => {
-    loadCalls();
-  }, [outcomeFilter]);
-
-  const handleSelectCall = async (id: string) => {
-    setSelectedCallId(id);
-    setLoadingDetail(true);
-    try {
-      const detail = await api.getCallDetail(id);
-      setCallDetail(detail);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingDetail(false);
+    if (!selectedId) {
+      setDetail(null);
+      return;
     }
-  };
-
-  const getOutcomeBadge = (outcome: string) => {
-    switch (outcome) {
-      case "order_confirmed":
-        return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase">Order Confirmed</span>;
-      case "callback_requested":
-        return <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase">Callback Requested</span>;
-      case "interested":
-        return <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase">Interested</span>;
-      case "do_not_call":
-        return <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase">Do Not Call</span>;
-      case "not_interested":
-        return <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase">Not Interested</span>;
-      case "no_answer":
-        return <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase">No Answer</span>;
-      default:
-        return <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase">In Progress</span>;
-    }
-  };
+    let cancelled = false;
+    setDetailLoading(true);
+    setDetailError(null);
+    api
+      .getCallDetail(selectedId)
+      .then((d) => !cancelled && setDetail(d))
+      .catch((e) => !cancelled && setDetailError(e instanceof Error ? e.message : "Could not load call"))
+      .finally(() => !cancelled && setDetailLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-            Calls & Full Transcripts
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Complete call transcripts, AI qualification summaries, and conversational outcomes.
-          </p>
-        </div>
+      <PageHeader
+        title="Calls"
+        actions={
+          <FilterSelect value={outcome} onChange={(e) => setOutcome(e.target.value)} aria-label="Filter by outcome">
+            {OUTCOMES.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </FilterSelect>
+        }
+      />
 
-        {/* Outcome Filter */}
-        <div className="flex items-center gap-2 text-xs">
-          <Filter className="w-4 h-4 text-slate-400" />
-          <select
-            value={outcomeFilter}
-            onChange={(e) => setOutcomeFilter(e.target.value)}
-            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:outline-none"
-          >
-            <option value="">All Call Outcomes</option>
-            <option value="order_confirmed">Order Confirmed</option>
-            <option value="interested">Interested</option>
-            <option value="callback_requested">Callback Requested</option>
-            <option value="not_interested">Not Interested</option>
-            <option value="do_not_call">Do Not Call (DNC)</option>
-            <option value="no_answer">No Answer</option>
-          </select>
-        </div>
-      </div>
+      <ErrorBanner message={error} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Calls Table */}
-        <div className={`${selectedCallId ? "lg:col-span-6" : "lg:col-span-12"} transition-all duration-200`}>
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-card overflow-hidden">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
+        <Card className={cn("overflow-hidden", selectedId ? "lg:col-span-6" : "lg:col-span-12")}>
+          {loading ? (
+            <TableSkeleton rows={6} cols={4} />
+          ) : calls.length === 0 ? (
+            <div className="p-5">
+              <EmptyState icon={<PhoneCall className="h-6 w-6" />} title="No calls match this filter" />
+            </div>
+          ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-b border-slate-100">
+              <table className="w-full min-w-[560px] text-left text-xs">
+                <thead className="border-b border-slate-200/80 bg-white text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="py-3 px-4">Contact</th>
-                    <th className="py-3 px-4">Outcome</th>
-                    <th className="py-3 px-4">Duration</th>
-                    <th className="py-3 px-4">Date / Time (IST)</th>
-                    <th className="py-3 px-4 text-right">Action</th>
+                    <th className="px-5 py-2.5">Contact</th>
+                    <th className="px-4 py-2.5">Outcome</th>
+                    <th className="px-4 py-2.5">Duration</th>
+                    <th className="px-4 py-2.5">Started</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {calls.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400">
-                        No calls found for this filter.
+                <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                  {calls.map((c) => (
+                    <tr
+                      key={c.id}
+                      onClick={() => setSelectedId(c.id)}
+                      className={cn("cursor-pointer transition hover:bg-slate-50", selectedId === c.id && "bg-slate-50")}
+                    >
+                      <td className="px-5 py-3">
+                        <div className="font-semibold text-navy-900">{c.contact_name}</div>
+                        <div className="font-mono text-[11px] text-slate-400">{c.contact_phone}</div>
                       </td>
+                      <td className="px-4 py-3">
+                        <StatusChip status={c.outcome} />
+                      </td>
+                      <td className="px-4 py-3 font-mono tabular-nums">{formatSeconds(c.duration_sec)}</td>
+                      <td className="px-4 py-3 text-slate-500">{formatDateTime(c.started_at)}</td>
                     </tr>
-                  ) : (
-                    calls.map((c) => (
-                      <tr
-                        key={c.id}
-                        onClick={() => handleSelectCall(c.id)}
-                        className={`hover:bg-slate-50 cursor-pointer transition ${
-                          selectedCallId === c.id ? "bg-slate-50/90 font-medium" : ""
-                        }`}
-                      >
-                        <td className="py-3.5 px-4 font-semibold text-slate-900">
-                          {c.contact_name}
-                          <span className="block text-[11px] text-slate-400 font-normal">{c.contact_phone}</span>
-                        </td>
-                        <td className="py-3.5 px-4">{getOutcomeBadge(c.outcome)}</td>
-                        <td className="py-3.5 px-4 font-mono">{c.duration_sec}s</td>
-                        <td className="py-3.5 px-4 text-slate-500">{c.started_at || "Recent"}</td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectCall(c.id);
-                            }}
-                            className="text-indigo-600 hover:text-indigo-800 font-semibold"
-                          >
-                            Transcript →
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
+          )}
+        </Card>
 
-        {/* Detailed Transcript Drawer */}
-        {selectedCallId && (
-          <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/80 shadow-card p-6 space-y-5 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  Call Details & Transcript
-                </h3>
-                <p className="text-xs text-slate-400 font-mono mt-0.5">ID: {selectedCallId.slice(0, 16)}...</p>
+        {selectedId && (
+          <Card className="animate-fade-in p-5 lg:col-span-6 sm:p-6">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-200/80 pb-3">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold tracking-tight text-navy-900">Transcript</h3>
+                <p className="truncate font-mono text-[11px] text-slate-400">{selectedId}</p>
               </div>
               <button
-                onClick={() => setSelectedCallId(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-semibold p-1"
+                onClick={() => setSelectedId(null)}
+                aria-label="Close transcript"
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-navy-900"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            {loadingDetail ? (
-              <div className="py-12 text-center text-xs text-slate-400">Loading transcript...</div>
-            ) : callDetail ? (
+            <ErrorBanner message={detailError} className="mb-3" />
+
+            {detailLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-20" />
+                <Skeleton className="h-10 w-3/4" />
+                <Skeleton className="ml-auto h-10 w-2/3" />
+                <Skeleton className="h-10 w-3/4" />
+              </div>
+            ) : detail ? (
               <div className="space-y-4">
-                {/* Meta summary chips */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 text-sm">{callDetail.contact_name}</span>
-                    {getOutcomeBadge(callDetail.outcome)}
+                <div className="space-y-2 rounded-xl border border-slate-200/80 bg-white p-4 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-navy-900">{detail.contact_name}</span>
+                    <StatusChip status={detail.outcome} />
                   </div>
-                  <div className="text-slate-500 flex flex-wrap gap-3 text-[11px]">
-                    <span>Phone: <strong>{callDetail.contact_phone}</strong></span>
-                    <span>·</span>
-                    <span>Language: <strong>{callDetail.language_preferred}</strong></span>
-                    <span>·</span>
-                    <span>Duration: <strong>{callDetail.duration_sec}s</strong></span>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                    <span className="font-mono">{detail.contact_phone}</span>
+                    {detail.language_preferred && <span className="capitalize">{detail.language_preferred}</span>}
+                    <span>{formatSeconds(detail.duration_sec)}</span>
                   </div>
-                  <div className="pt-2 text-slate-700 leading-relaxed font-normal border-t border-slate-200/60 mt-2">
-                    <span className="font-semibold text-slate-900">AI Summary: </span>
-                    {callDetail.summary}
-                  </div>
+                  {detail.summary && (
+                    <p className="border-t border-slate-100 pt-2 leading-relaxed text-slate-700">{detail.summary}</p>
+                  )}
                 </div>
-
-                {/* Turn-by-Turn Transcript */}
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                    Spoken Dialogue Transcript
-                  </h4>
-                  <div className="space-y-3 max-h-[460px] overflow-y-auto pr-2">
-                    {callDetail.transcript?.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">No spoken dialogue recorded for this call.</p>
-                    ) : (
-                      callDetail.transcript.map((turn: any, idx: number) => {
-                        const isAgent = turn.speaker === "agent";
-                        return (
-                          <div
-                            key={idx}
-                            className={`flex gap-3 text-xs ${isAgent ? "justify-start" : "justify-end"}`}
-                          >
-                            {isAgent && (
-                              <div className="w-7 h-7 rounded-full bg-navy-900 text-white flex items-center justify-center shrink-0 text-[10px] font-bold">
-                                AI
-                              </div>
-                            )}
-
-                            <div
-                              className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
-                                isAgent
-                                  ? "bg-slate-100 text-slate-900 rounded-tl-sm"
-                                  : "bg-indigo-600 text-white rounded-tr-sm"
-                              }`}
-                            >
-                              <div className="text-[10px] font-medium opacity-70 mb-0.5">
-                                {isAgent ? "BARTA Voice Assistant" : callDetail.contact_name}
-                              </div>
-                              <p className="leading-relaxed">{turn.text}</p>
-                            </div>
-
-                            {!isAgent && (
-                              <div className="w-7 h-7 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center shrink-0 text-[10px] font-bold">
-                                <User className="w-3.5 h-3.5" />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+                <div className="max-h-[480px] overflow-y-auto pr-1">
+                  <TranscriptThread turns={detail.transcript ?? []} contactName={detail.contact_name} dense />
                 </div>
               </div>
             ) : null}
-          </div>
+          </Card>
         )}
       </div>
     </div>
   );
 }
 
+export default function CallsPage() {
+  return (
+    <Suspense fallback={<TableSkeleton rows={6} cols={4} />}>
+      <CallsView />
+    </Suspense>
+  );
+}
