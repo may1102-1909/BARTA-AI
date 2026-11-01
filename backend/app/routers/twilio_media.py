@@ -115,7 +115,7 @@ async def twilio_media_websocket(websocket: WebSocket):
                 return {"status": "success", "message": "Callback scheduled"}
 
             elif tool_name in ["send_whatsapp_catalog", "send_whatsapp"]:
-                phone = args.get("phone") or "+918454925469"
+                phone = args.get("phone") or (contact.phone if contact else "")
                 catalog_body = (
                     "🌟 *CURATED India - New Drop Collection*\n\n"
                     "Explore our pure organic minimalist linen kurtas starting at ₹1,499:\n"
@@ -227,7 +227,7 @@ async def twilio_media_websocket(websocket: WebSocket):
                         contact = Contact(
                             campaign_id=campaign.id if campaign else "default-camp",
                             name="Tanmay",
-                            phone=start_data.get("from", "+918454925469"),
+                            phone=start_data.get("from") or start_data.get("to") or "",
                             language="hinglish",
                             status="dialing"
                         )
@@ -257,7 +257,7 @@ async def twilio_media_websocket(websocket: WebSocket):
 
                     agent = VoiceAgentLLM(
                         contact_name=contact.name if contact else "Tanmay",
-                        contact_phone=contact.phone if contact else "+918454925469",
+                        contact_phone=contact.phone if contact else "",
                         contact_email=contact.email if contact else None,
                         preferred_language=contact.language if contact else "hinglish",
                         product_info=product.details if product else {},

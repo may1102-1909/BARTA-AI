@@ -20,7 +20,7 @@ IST = pytz.timezone("Asia/Kolkata")
 AGENT_TOOLS = [
     {
         "name": "send_whatsapp_catalog",
-        "description": "Sends the CURATED India product drop catalog and link to the customer on WhatsApp (+918454925469).",
+        "description": "Sends the CURATED India product drop catalog and link to the customer on WhatsApp.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -96,13 +96,13 @@ AGENT_TOOLS = [
 class VoiceAgentLLM:
     """
     Manages conversational intelligence for 'Shubham', outbound AI voice sales agent
-    for Curated India, calling customer Tanmay (+918454925469).
+    for Curated India, calling customer Tanmay.
     """
 
     def __init__(
         self,
         contact_name: str = "Tanmay",
-        contact_phone: str = "+918454925469",
+        contact_phone: str = "",
         contact_email: Optional[str] = None,
         preferred_language: str = "hinglish",
         product_info: Optional[Dict[str, Any]] = None,
@@ -111,7 +111,7 @@ class VoiceAgentLLM:
         tool_handler: Optional[Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None
     ):
         self.contact_name = contact_name or "Tanmay"
-        self.contact_phone = contact_phone or "+918454925469"
+        self.contact_phone = contact_phone or ""
         self.contact_email = contact_email or ""
         self.preferred_language = preferred_language or "hinglish"
         self.product_info = product_info or {
@@ -148,7 +148,7 @@ class VoiceAgentLLM:
         return f"""You are "Shubham", an outbound AI voice sales agent for Curated India. Your voice is generated via Gnani AI Timbre TTS, and your responses must be natural, concise, and optimized for real-time speech (avoid long paragraphs, bullet points, or markdown). 
 
 Current local time: {current_time_ist}
-You are calling a customer named TANMAY (+918454925469). You must strictly follow this conversational state machine and flow:
+You are calling a customer named TANMAY ({self.contact_phone}). You must strictly follow this conversational state machine and flow:
 
 ### CONVERSATIONAL FLOW & SCRIPT:
 
