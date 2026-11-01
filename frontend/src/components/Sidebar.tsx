@@ -10,86 +10,79 @@ import {
   ShoppingBag,
   CalendarClock,
   Sparkles,
-  ExternalLink,
-  Bot
+  Bot,
+  X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-export function Sidebar() {
+const NAV = [
+  { label: "Overview", href: "/", icon: LayoutDashboard },
+  { label: "Campaigns", href: "/campaigns", icon: Megaphone },
+  { label: "Calls", href: "/calls", icon: PhoneCall },
+  { label: "Orders", href: "/orders", icon: ShoppingBag },
+  { label: "Callbacks", href: "/callbacks", icon: CalendarClock },
+  { label: "Simulator", href: "/simulator", icon: Sparkles },
+];
+
+export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
 
-  const navItems = [
-    { label: "Overview", href: "/", icon: LayoutDashboard },
-    { label: "Campaigns", href: "/campaigns", icon: Megaphone },
-    { label: "Calls & Transcripts", href: "/calls", icon: PhoneCall },
-    { label: "Orders", href: "/orders", icon: ShoppingBag },
-    { label: "Callbacks", href: "/callbacks", icon: CalendarClock },
-    { label: "Voice Simulator", href: "/simulator", icon: Sparkles },
-  ];
-
   return (
-    <aside className="w-64 bg-white border-r border-slate-200/80 flex flex-col justify-between min-h-screen select-none">
-      <div>
-        {/* Brand Header */}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-          <Link href="/" className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-navy-900 flex items-center justify-center text-white shadow-sm">
-              <Bot className="w-5 h-5 text-indigo-400" />
+    <>
+      <div
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 z-40 bg-navy-950/40 backdrop-blur-sm transition-opacity lg:hidden",
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        )}
+      />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200/80 bg-white transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="flex h-14 items-center justify-between border-b border-slate-200/80 px-5">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-900 text-white">
+              <Bot className="h-4 w-4" />
             </div>
-            <div>
-              <div className="text-base font-semibold tracking-tight text-slate-900 flex items-center gap-1.5">
-                BARTA <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-mono font-medium">ai</span>
-              </div>
-              <p className="text-[11px] text-slate-400 font-medium">Outbound Voice Agent</p>
-            </div>
+            <span className="text-sm font-bold tracking-tight text-navy-900">
+              BARTA <span className="font-mono text-xs font-medium text-slate-500">ai</span>
+            </span>
           </Link>
+          <button
+            onClick={onClose}
+            aria-label="Close navigation"
+            className="rounded-md p-1 text-slate-400 hover:text-navy-900 lg:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {/* Navigation items */}
-        <div className="px-3 py-4 space-y-1">
-          <div className="px-3 mb-2 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-            Menu
-          </div>
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
+        <nav className="flex-1 space-y-0.5 px-3 py-4">
+          {NAV.map(({ label, href, icon: Icon }) => {
+            const active = pathname === href;
             return (
               <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? "bg-slate-900 text-white shadow-subtle"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                }`}
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  active ? "bg-navy-900 text-white shadow-subtle" : "text-slate-600 hover:bg-slate-50 hover:text-navy-900"
+                )}
               >
-                <Icon className={`w-4 h-4 ${isActive ? "text-indigo-400" : "text-slate-400"}`} />
-                <span>{item.label}</span>
+                <Icon className={cn("h-4 w-4", active ? "text-white" : "text-slate-400")} />
+                {label}
               </Link>
             );
           })}
-        </div>
-      </div>
+        </nav>
 
-      {/* Footer Info & Product Anchor */}
-      <div className="p-4 border-t border-slate-100">
-        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-800">
-            <span>CURATED India</span>
-            <a
-              href="https://curatedindia.vercel.app"
-              target="_blank"
-              rel="noreferrer"
-              className="text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 text-[11px]"
-            >
-              Store <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Voice loop powered by <strong>Gnani AI</strong> (Prisma STT + Timbre TTS).
-          </p>
+        <div className="border-t border-slate-200/80 px-5 py-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          Voice agent workspace
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
-

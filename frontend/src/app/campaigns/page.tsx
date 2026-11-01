@@ -1,445 +1,302 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
-import {
-  Megaphone,
-  Plus,
-  Play,
-  Pause,
-  Square,
-  Upload,
-  Download,
-  CheckCircle2,
-  AlertCircle,
-  FileSpreadsheet,
-  Clock,
-  Layers,
-  Sparkles
-} from "lucide-react";
+import React, { useRef, useState } from "react";
+import { Plus, Play, Pause, Square, Upload, Download, CheckCircle2, AlertCircle, Megaphone } from "lucide-react";
 import { api } from "@/lib/api";
+import { usePolling } from "@/lib/hooks";
+import type { Campaign, CampaignCreateInput, ImportResult } from "@/lib/types";
+import { Card } from "@/components/ui/Card";
+import { StatusChip } from "@/components/ui/Status";
+import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Field, Input, Select, Textarea } from "@/components/ui/Form";
+
+const CSV_HEADERS = "name,phone,language,email,notes";
+
+const DEFAULT_FORM: CampaignCreateInput = {
+  name: "",
+  goal: "",
+  max_concurrent: 1,
+  window_start: "09:00",
+  window_end: "20:00",
+  retry_limit: 2,
+};
+
+function downloadCsvTemplate() {
+  const blob = new Blob([`${CSV_HEADERS}\n`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "contacts_template.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function CampaignsPage() {
-  const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState<string | null>(null); // campaignId
-  const [importResult, setImportResult] = useState<any>(null);
-  const [isImporting, setIsImporting] = useState(false);
+  const { data, loading, error, refresh } = usePolling(() => api.getCampaigns(), [], { intervalMs: 8000 });
+  const campaigns = data ?? [];
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState<CampaignCreateInput>(DEFAULT_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [importTarget, setImportTarget] = useState<Campaign | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form states
-  const [name, setName] = useState("Festive Kurta Sales Drive");
-  const [goal, setGoal] = useState("Introduce CURATED Minimalist Linen Kurta with festive ₹400 discount and book orders.");
-  const [maxConcurrent, setMaxConcurrent] = useState(1);
-  const [windowStart, setWindowStart] = useState("09:00");
-  const [windowEnd, setWindowEnd] = useState("20:00");
-  const [retryLimit, setRetryLimit] = useState(2);
+  const update = <K extends keyof CampaignCreateInput>(key: K, value: CampaignCreateInput[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
 
-  const loadCampaigns = async () => {
-    try {
-      const data = await api.getCampaigns();
-      setCampaigns(data);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  useEffect(() => {
-    loadCampaigns();
-  }, []);
-
-  const handleCreateCampaign = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
+    setFormError(null);
     try {
-      await api.createCampaign({
-        name,
-        goal,
-        max_concurrent: Number(maxConcurrent),
-        window_start: windowStart,
-        window_end: windowEnd,
-        retry_limit: Number(retryLimit),
-        product_id: "curated-linen-kurta-01"
-      });
-      setShowCreateModal(false);
-      loadCampaigns();
-    } catch (err: any) {
-      alert("Error creating campaign: " + err.message);
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !showImportModal) return;
-
-    setIsImporting(true);
-    setImportResult(null);
-
-    try {
-      const res = await api.importContactsCsv(showImportModal, file);
-      setImportResult(res);
-      loadCampaigns();
-    } catch (err: any) {
-      setImportResult({ status: "error", error: err.message });
+      await api.createCampaign(form);
+      setShowCreate(false);
+      setForm(DEFAULT_FORM);
+      refresh();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not create campaign");
     } finally {
-      setIsImporting(false);
+      setSaving(false);
     }
   };
 
-  const handleDownloadSample = () => {
-    const csvContent =
-      "name,phone,language,email,notes\n" +
-      "Aarav Sharma,+919876543210,hinglish,aarav.sharma@example.com,Interested in olive kurta\n" +
-      "Priya Patel,+919876543211,hindi,priya.patel@example.com,Requested morning window\n" +
-      "Rohan Mehta,+919876543212,english,rohan.mehta@example.com,Repeat customer\n" +
-      "Ananya Iyer,+919876543213,hinglish,ananya.iyer@example.com,Looking for size M\n" +
-      "Vikram Singh,+919876543214,hindi,vikram.singh@example.com,Cash on delivery preference\n";
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !importTarget) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      setImportResult(await api.importContactsCsv(importTarget.id, file));
+      refresh();
+    } catch (err) {
+      setImportResult({ status: "error", error: err instanceof Error ? err.message : "Import failed" });
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", "barta_sample_contacts.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const act = async (fn: () => Promise<unknown>) => {
+    await fn();
+    refresh();
   };
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-            Campaigns & Contact Lists
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Configure concurrency (1 to 5 calls), set calling windows, and upload customer CSVs.
+    <div className="space-y-6 pb-12">
+      <PageHeader
+        title="Campaigns"
+        actions={
+          <>
+            <Button variant="secondary" size="sm" icon={<Download className="h-3.5 w-3.5" />} onClick={downloadCsvTemplate}>
+              CSV template
+            </Button>
+            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
+              New campaign
+            </Button>
+          </>
+        }
+      />
+
+      <ErrorBanner message={error} />
+
+      {loading ? (
+        <div className="space-y-4">
+          {[0, 1].map((i) => (
+            <Card key={i} className="space-y-4 p-6">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-full max-w-xl" />
+              <div className="grid grid-cols-3 gap-3">
+                <Skeleton className="h-14" />
+                <Skeleton className="h-14" />
+                <Skeleton className="h-14" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : campaigns.length === 0 ? (
+        <EmptyState
+          icon={<Megaphone className="h-6 w-6" />}
+          title="No campaigns yet"
+          action={
+            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
+              New campaign
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-4">
+          {campaigns.map((camp) => (
+            <Card key={camp.id} className="p-5 sm:p-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-semibold tracking-tight text-navy-900">{camp.name}</h3>
+                    <StatusChip status={camp.status} />
+                  </div>
+                  <p className="text-xs text-slate-500">{camp.goal}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-[11px] font-medium text-slate-500">
+                    <span>
+                      Window <strong className="text-navy-900">{camp.window_start}–{camp.window_end} IST</strong>
+                    </span>
+                    <span>
+                      Concurrency <strong className="text-navy-900">{camp.max_concurrent}</strong>
+                    </span>
+                    <span>
+                      Retries <strong className="text-navy-900">{camp.retry_limit}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<Upload className="h-3.5 w-3.5" />}
+                    onClick={() => {
+                      setImportTarget(camp);
+                      setImportResult(null);
+                    }}
+                  >
+                    Import CSV
+                  </Button>
+                  {camp.status === "active" ? (
+                    <Button variant="secondary" size="sm" icon={<Pause className="h-3.5 w-3.5" />} onClick={() => act(() => api.pauseCampaign(camp.id))}>
+                      Pause
+                    </Button>
+                  ) : (
+                    <Button size="sm" icon={<Play className="h-3.5 w-3.5 fill-current" />} onClick={() => act(() => api.startCampaign(camp.id))}>
+                      Start
+                    </Button>
+                  )}
+                  {camp.status !== "draft" && (
+                    <Button variant="ghost" size="sm" title="Stop campaign" aria-label="Stop campaign" onClick={() => act(() => api.stopCampaign(camp.id))}>
+                      <Square className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/80 pt-4">
+                {[
+                  ["Contacts", camp.total_contacts ?? 0],
+                  ["Calls", camp.total_calls ?? 0],
+                  ["Orders", camp.orders_count ?? 0],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-slate-200/80 bg-white p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
+                    <div className="mt-0.5 text-lg font-bold tabular-nums text-navy-900">{value}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New campaign">
+        <form onSubmit={handleCreate} className="space-y-4">
+          <Field label="Name">
+            <Input required value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="Campaign name" />
+          </Field>
+          <Field label="Goal">
+            <Textarea
+              rows={3}
+              required
+              value={form.goal}
+              onChange={(e) => update("goal", e.target.value)}
+              placeholder="What should the agent achieve on each call?"
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Concurrent calls">
+              <Select value={form.max_concurrent} onChange={(e) => update("max_concurrent", Number(e.target.value))}>
+                {[1, 2, 3, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Retry limit">
+              <Input type="number" min={0} max={5} value={form.retry_limit} onChange={(e) => update("retry_limit", Number(e.target.value))} />
+            </Field>
+            <Field label="Window start (IST)">
+              <Input type="time" value={form.window_start} onChange={(e) => update("window_start", e.target.value)} />
+            </Field>
+            <Field label="Window end (IST)">
+              <Input type="time" value={form.window_end} onChange={(e) => update("window_end", e.target.value)} />
+            </Field>
+          </div>
+          <ErrorBanner message={formError} />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Creating…" : "Create"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={!!importTarget} onClose={() => setImportTarget(null)} title={`Import contacts · ${importTarget?.name ?? ""}`}>
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Headers: <code className="font-mono text-navy-900">{CSV_HEADERS}</code>. Phone in E.164.
           </p>
-        </div>
-
-        <div className="flex items-center gap-3">
           <button
-            onClick={handleDownloadSample}
-            className="flex items-center gap-2 text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-2 rounded-lg transition shadow-sm"
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="w-full rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-8 text-center transition hover:border-navy-900 disabled:opacity-60"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Sample CSV</span>
+            <Upload className="mx-auto mb-2 h-6 w-6 text-slate-400" />
+            <div className="text-xs font-semibold text-navy-900">{importing ? "Uploading…" : "Choose CSV file"}</div>
+            <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
           </button>
 
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 text-xs font-semibold bg-navy-900 text-white hover:bg-slate-800 px-4 py-2 rounded-lg transition shadow-subtle"
-          >
-            <Plus className="w-4 h-4 text-indigo-400" />
-            <span>New Campaign</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Campaign List */}
-      <div className="grid grid-cols-1 gap-5">
-        {campaigns.map((camp) => (
-          <div
-            key={camp.id}
-            className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-card flex flex-col justify-between gap-6"
-          >
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-              <div className="space-y-1.5 max-w-2xl">
-                <div className="flex items-center gap-2.5">
-                  <h3 className="text-base font-semibold text-slate-900">{camp.name}</h3>
-                  <span
-                    className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                      camp.status === "active"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : camp.status === "paused"
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-slate-100 text-slate-700"
-                    }`}
-                  >
-                    {camp.status}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">{camp.goal}</p>
-
-                {/* Configuration Specs */}
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-2 font-medium">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Calling Window: <strong className="text-slate-800">{camp.window_start} - {camp.window_end} IST</strong></span>
-                  </div>
-                  <span>·</span>
-                  <div className="flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Concurrency: <strong className="text-slate-800">{camp.max_concurrent} call{camp.max_concurrent > 1 ? "s" : ""} at once</strong></span>
-                  </div>
-                  <span>·</span>
-                  <span>Retries: <strong className="text-slate-800">{camp.retry_limit}</strong></span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2.5">
-                <button
-                  onClick={() => {
-                    setShowImportModal(camp.id);
-                    setImportResult(null);
-                  }}
-                  className="flex items-center gap-1.5 text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-2 rounded-lg transition shadow-sm"
-                >
-                  <Upload className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Import CSV</span>
-                </button>
-
-                {camp.status === "active" ? (
-                  <button
-                    onClick={async () => {
-                      await api.pauseCampaign(camp.id);
-                      loadCampaigns();
-                    }}
-                    className="flex items-center gap-1.5 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 px-3.5 py-2 rounded-lg transition"
-                  >
-                    <Pause className="w-3.5 h-3.5" />
-                    <span>Pause</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={async () => {
-                      await api.startCampaign(camp.id);
-                      loadCampaigns();
-                    }}
-                    className="flex items-center gap-1.5 text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg transition shadow-sm"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Start Calling</span>
-                  </button>
-                )}
-
-                {camp.status !== "draft" && (
-                  <button
-                    onClick={async () => {
-                      await api.stopCampaign(camp.id);
-                      loadCampaigns();
-                    }}
-                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                    title="Stop Campaign"
-                  >
-                    <Square className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Campaign Stats Mini Bar */}
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100 text-xs">
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                <span className="text-slate-400 font-medium">Total Contacts</span>
-                <div className="text-base font-bold text-slate-900 mt-0.5">{camp.total_contacts || 0}</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                <span className="text-slate-400 font-medium">Calls Placed</span>
-                <div className="text-base font-bold text-slate-900 mt-0.5">{camp.total_calls || 0}</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                <span className="text-slate-400 font-medium">Orders Confirmed</span>
-                <div className="text-base font-bold text-indigo-600 mt-0.5">{camp.orders_count || 0}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Create Campaign Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900">Create New Campaign</h3>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-semibold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateCampaign} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Campaign Name</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-900 text-slate-800"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Sales Goal Prompt</label>
-                <textarea
-                  rows={2}
-                  required
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-900 text-slate-800"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Max Concurrent Calls</label>
-                  <select
-                    value={maxConcurrent}
-                    onChange={(e) => setMaxConcurrent(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-800"
-                  >
-                    <option value={1}>1 call (Default test / trial)</option>
-                    <option value={2}>2 calls</option>
-                    <option value={3}>3 calls (Scale mode)</option>
-                    <option value={5}>5 calls (Scale mode)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Retry Limit</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={5}
-                    value={retryLimit}
-                    onChange={(e) => setRetryLimit(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Window Start (IST)</label>
-                  <input
-                    type="time"
-                    value={windowStart}
-                    onChange={(e) => setWindowStart(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Window End (IST)</label>
-                  <input
-                    type="time"
-                    value={windowEnd}
-                    onChange={(e) => setWindowEnd(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-navy-900 text-white rounded-lg font-semibold hover:bg-slate-800"
-                >
-                  Create Campaign
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CSV Import Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
-                Upload Contact List (CSV)
-              </h3>
-              <button
-                onClick={() => setShowImportModal(null)}
-                className="text-slate-400 hover:text-slate-600 font-semibold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Upload a CSV file containing contact records. Supported headers: <code>name</code>, <code>phone</code> (E.164), <code>language</code>, <code>email</code>, <code>notes</code>.
-            </p>
-
+          {importResult && (
             <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-xl p-8 text-center cursor-pointer transition bg-slate-50/50"
+              className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs ${
+                importResult.status === "success" ? "border-slate-200/80 bg-white text-navy-900" : "border-red-200 bg-red-50 text-red-700"
+              }`}
             >
-              <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-              <div className="text-xs font-semibold text-slate-800">
-                {isImporting ? "Processing CSV..." : "Click to select CSV file"}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">.csv files up to 5MB</p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </div>
-
-            {/* Validation Feedback */}
-            {importResult && (
-              <div
-                className={`p-3.5 rounded-xl text-xs space-y-1.5 ${
-                  importResult.status === "success"
-                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                    : "bg-red-50 text-red-800 border border-red-200"
-                }`}
-              >
-                {importResult.status === "success" ? (
-                  <>
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      Imported {importResult.imported_count} valid contacts!
-                    </div>
-                    {importResult.rejected_count > 0 && (
-                      <p className="text-[11px] text-amber-700">
-                        {importResult.rejected_count} invalid rows rejected (invalid phone or missing name).
-                      </p>
+              {importResult.status === "success" ? (
+                <>
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <div className="font-semibold">{importResult.imported_count ?? 0} contacts imported</div>
+                    {!!importResult.rejected_count && (
+                      <div className="text-slate-500">{importResult.rejected_count} rows rejected</div>
                     )}
-                  </>
-                ) : (
-                  <div className="font-semibold flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 text-red-600" />
-                    {importResult.error || "Failed to parse CSV"}
                   </div>
-                )}
-              </div>
-            )}
-
-            <div className="pt-2 flex justify-between items-center text-xs">
-              <button
-                onClick={handleDownloadSample}
-                className="text-indigo-600 hover:underline font-medium"
-              >
-                Download Sample CSV
-              </button>
-              <button
-                onClick={() => setShowImportModal(null)}
-                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium"
-              >
-                Done
-              </button>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="font-semibold">{importResult.error || "Import failed"}</span>
+                </>
+              )}
             </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
+            <button type="button" onClick={downloadCsvTemplate} className="text-xs font-semibold text-slate-500 hover:text-navy-900">
+              Download template
+            </button>
+            <Button variant="secondary" onClick={() => setImportTarget(null)}>
+              Done
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
-
