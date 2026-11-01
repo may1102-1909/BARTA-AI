@@ -26,6 +26,8 @@ backend/.env
 *.local
 test_call.py
 backend/test_call.py
+test_email.py
+backend/test_email.py
 
 # Logs
 *.log
