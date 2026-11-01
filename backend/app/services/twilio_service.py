@@ -77,3 +77,35 @@ class TwilioService:
             logger.error(f"Twilio call creation failed for {to_phone}: {e}")
             return None
 
+    def send_whatsapp(self, to_phone: str, body: str) -> bool:
+        """Sends WhatsApp message using Twilio WhatsApp API or logs as fallback."""
+        if not self.client:
+            logger.warning("Twilio client not initialized. Cannot dispatch WhatsApp.")
+            return False
+
+        try:
+            from_wa = settings.TWILIO_WHATSAPP_NUMBER or "whatsapp:+14155238886"
+            to_wa = to_phone if to_phone.startswith("whatsapp:") else f"whatsapp:{to_phone}"
+            msg = self.client.messages.create(
+                from_=from_wa,
+                to=to_wa,
+                body=body
+            )
+            logger.info(f"Twilio WhatsApp sent successfully: SID={msg.sid} to {to_wa}")
+            return True
+        except Exception as e:
+            logger.warning(f"Twilio WhatsApp dispatch notice (recipient may need to join Twilio sandbox): {e}")
+            # Attempt SMS dispatch if WhatsApp requires sandbox opt-in
+            try:
+                raw_phone = to_phone.replace("whatsapp:", "")
+                sms = self.client.messages.create(
+                    from_=self.phone_number,
+                    to=raw_phone,
+                    body=body
+                )
+                logger.info(f"Dispatched via fallback SMS: SID={sms.sid} to {raw_phone}")
+                return True
+            except Exception as ex_sms:
+                logger.warning(f"Fallback SMS notice: {ex_sms}")
+                return False
+

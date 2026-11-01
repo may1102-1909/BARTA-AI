@@ -62,16 +62,13 @@ app.include_router(simulator.router)
 
 @app.post("/twilio/voice")
 async def twilio_voice(request: Request):
-    # The <Say> tag speaks your custom greeting immediately when you answer.
-    # Then <Connect><Stream> hands the call over to your WebSocket for the AI to listen and reply.
+    # This immediately connects Twilio to your backend WebSocket
     twiml = """<?xml version="1.0" encoding="UTF-8"?>
     <Response>
-        <Say>Hi, I'm GP calling from Curated India.</Say>
         <Connect>
             <Stream url="wss://unstable-roundish-giblet.ngrok-free.dev/twilio/media" />
         </Connect>
     </Response>"""
-    
     return HTMLResponse(content=twiml, media_type="application/xml")
 
 @app.get("/")

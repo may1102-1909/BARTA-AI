@@ -17,12 +17,12 @@ class GnaniTimbreTTS:
 
     def __init__(self):
         self.api_key = settings.GNANI_API_KEY
-        self.api_url = settings.GNANI_TTS_API_URL
-        self.voice = settings.GNANI_TTS_VOICE
+        self.api_url = settings.GNANI_TTS_API_URL or "https://api.vachana.ai/api/v1/tts/inference"
+        self.voice = settings.GNANI_TTS_VOICE or "Shubham"
 
-    async def synthesize(self, text: str, language: str = "hin-eng") -> bytes:
+    async def synthesize(self, text: str, voice: Optional[str] = None, language: str = "hi") -> bytes:
         """
-        Synthesizes text into 8 kHz μ-law audio bytes.
+        Synthesizes text into 8 kHz μ-law audio bytes using Gnani Timbre TTS (Voice: Shubham).
         """
         if not text or not text.strip():
             return b""
@@ -37,10 +37,16 @@ class GnaniTimbreTTS:
                     }
                     payload = {
                         "text": text.strip(),
-                        "voice": self.voice,
-                        "language": language,
-                        "audio_format": "pcm",
-                        "sample_rate": 8000
+                        "model": "timbre-v3.0",
+                        "voice": voice or self.voice or "Shubham",
+                        "language": "hi",
+                        "audio_config": {
+                            "encoding": "linear_pcm",
+                            "container": "wav",
+                            "num_channels": 1,
+                            "sample_rate": 8000,
+                            "sample_width": 2
+                        }
                     }
                     response = await client.post(self.api_url, json=payload, headers=headers)
                     if response.status_code == 200:

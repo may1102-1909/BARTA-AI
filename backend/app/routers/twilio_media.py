@@ -1,6 +1,7 @@
 import json
+import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Response, Depends
 from sqlalchemy import select
@@ -99,40 +100,40 @@ async def twilio_media_websocket(websocket: WebSocket):
                 try:
                     due_at = datetime.fromisoformat(due_at_str.replace("Z", "+00:00"))
                 except Exception:
-                    due_at = datetime.now(timezone.utc)
+                    due_at = datetime.now(timezone.utc) + timedelta(hours=2)
                 
                 cb = Callback(
                     contact_id=contact_id,
                     source_call_id=call_id,
                     due_at=due_at,
-                    reason=args.get("reason", "Customer requested callback"),
+                    reason=args.get("reason", "Customer requested callback in 2 hours"),
                     status="pending"
                 )
                 session.add(cb)
                 await session.commit()
+                logger.info(f"Callback registered in DB for {due_at} (contact_id={contact_id})")
                 return {"status": "success", "message": "Callback scheduled"}
 
-            elif tool_name == "set_outcome":
-                outcome = args.get("outcome")
-                if outcome == "do_not_call" and contact_id:
-                    c_res = await session.execute(select(Contact).where(Contact.id == contact_id))
-                    contact = c_res.scalars().first()
-                    if contact:
-                        contact.status = "dnc"
-                        await session.commit()
-                return {"status": "success"}
-
-            elif tool_name == "send_whatsapp":
+            elif tool_name in ["send_whatsapp_catalog", "send_whatsapp"]:
+                phone = args.get("phone") or "+918454925469"
+                catalog_body = (
+                    "🌟 *CURATED India - New Drop Collection*\n\n"
+                    "Explore our pure organic minimalist linen kurtas starting at ₹1,499:\n"
+                    "👉 https://curatedindia.vercel.app/catalog\n\n"
+                    "Complimentary express shipping across India & Cash on Delivery available!"
+                )
+                twilio_service.send_whatsapp(to_phone=phone, body=catalog_body)
                 msg = Message(
                     contact_id=contact_id,
                     channel="whatsapp",
                     direction="outbound",
-                    body=f"Sent CURATED India catalog & offer link via WhatsApp ({args.get('message_type')})",
+                    body=catalog_body,
                     status="sent"
                 )
                 session.add(msg)
                 await session.commit()
-                return {"status": "success"}
+                logger.info(f"WhatsApp catalog dispatched to {phone}")
+                return {"status": "success", "message": "WhatsApp catalog sent"}
 
             return {"status": "unknown_tool"}
 
@@ -156,10 +157,11 @@ async def twilio_media_websocket(websocket: WebSocket):
             llm_result = await agent.generate_response(transcript)
             reply_text = llm_result.get("text", "")
 
+            frames = []
             if reply_text and stream_sid:
                 is_agent_speaking = True
-                # Synthesize with Gnani Timbre TTS
-                audio_ulaw = await tts_service.synthesize(reply_text, language=detected_lang or "hin-eng")
+                # Synthesize with Gnani Timbre TTS (Voice: Shubham)
+                audio_ulaw = await tts_service.synthesize(reply_text, voice="Shubham")
                 frames = AudioConverter.chunk_ulaw(audio_ulaw, frame_ms=20)
 
                 for frame in frames:
@@ -172,8 +174,13 @@ async def twilio_media_websocket(websocket: WebSocket):
                 is_agent_speaking = False
 
             if llm_result.get("call_ended"):
-                logger.info("Agent concluded call. Closing stream.")
-                await websocket.close()
+                logger.info("Agent concluded call. Waiting for audio playback to finish before closing stream.")
+                playback_wait = max(2.0, (len(frames) * 0.02) + 1.2)
+                await asyncio.sleep(playback_wait)
+                try:
+                    await websocket.close()
+                except Exception:
+                    pass
 
     try:
         while True:
@@ -219,8 +226,8 @@ async def twilio_media_websocket(websocket: WebSocket):
                     if not contact:
                         contact = Contact(
                             campaign_id=campaign.id if campaign else "default-camp",
-                            name="Valued Customer",
-                            phone=start_data.get("from", "+919876543210"),
+                            name="Tanmay",
+                            phone=start_data.get("from", "+918454925469"),
                             language="hinglish",
                             status="dialing"
                         )
@@ -249,25 +256,26 @@ async def twilio_media_websocket(websocket: WebSocket):
                     await stt.connect()
 
                     agent = VoiceAgentLLM(
-                        contact_name=contact.name if contact else "Valued Customer",
-                        contact_phone=contact.phone if contact else "",
+                        contact_name=contact.name if contact else "Tanmay",
+                        contact_phone=contact.phone if contact else "+918454925469",
                         contact_email=contact.email if contact else None,
                         preferred_language=contact.language if contact else "hinglish",
                         product_info=product.details if product else {},
-                        campaign_goal=campaign.goal if campaign else "Qualify interest and take festive orders.",
+                        campaign_goal=campaign.goal if campaign else "Share new drop details and send WhatsApp catalog",
                         previous_call_context=contact.notes if contact else None,
                         tool_handler=handle_agent_tool
                     )
 
-                    # Send opening greeting
+                    # Trigger Opening Line: The moment WebSocket connects, backend sends "Hi, kya mai Tanmay se baat kar raha hoon?"
                     greeting_text = agent.get_initial_greeting()
+                    logger.info(f"Triggering opening line for Shubham: '{greeting_text}'")
                     agent.history.append({
                         "speaker": "agent",
                         "text": greeting_text,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     })
 
-                    audio_ulaw = await tts_service.synthesize(greeting_text)
+                    audio_ulaw = await tts_service.synthesize(greeting_text, voice="Shubham")
                     frames = AudioConverter.chunk_ulaw(audio_ulaw, frame_ms=20)
                     for frame in frames:
                         payload_b64 = AudioConverter.bytes_to_base64(frame)

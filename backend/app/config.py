@@ -23,13 +23,13 @@ class Settings(BaseSettings):
     # Gnani AI (Prisma STT + Timbre TTS)
     GNANI_API_KEY: str = ""
     GNANI_STT_WS_URL: str = "wss://api.vachana.ai/stt/v3/stream"
-    GNANI_TTS_API_URL: str = "https://api.vachana.ai/tts/v2/synthesize"
+    GNANI_TTS_API_URL: str = "https://api.vachana.ai/api/v1/tts/inference"
     GNANI_STT_LANG: str = "hin-eng" # Hindi, English, Hinglish
-    GNANI_TTS_VOICE: str = "timbre_hindi_female"
+    GNANI_TTS_VOICE: str = "Shubham"
 
     # LLM (Google Gemini)
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
 
     # Email
     RESEND_API_KEY: str = ""
