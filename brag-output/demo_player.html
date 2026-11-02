@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BARTA AI — Demo Presentation & Launch Showcase</title>
+  <style>
+    :root {
+      --navy: #0F172A;
+      --card-bg: #1E293B;
+      --border: #334155;
+      --text-white: #FFFFFF;
+      --text-muted: #94A3B8;
+      --accent-blue: #3B82F6;
+      --accent-cyan: #38BDF8;
+      --accent-green: #10B981;
+      --accent-amber: #F59E0B;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--navy);
+      color: var(--text-white);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.95);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(8px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .badge-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--accent-green);
+      color: var(--accent-green);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.3); }
+    }
+    main {
+      flex: 1;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+      width: 100%;
+    }
+    .hero-banner {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .hero-banner h1 {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.5rem;
+    }
+    .hero-banner p {
+      color: var(--text-muted);
+      font-size: 1.15rem;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .player-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      margin-bottom: 2rem;
+    }
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.5rem;
+      padding: 1rem;
+      background: #151f30;
+      border-top: 1px solid var(--border);
+    }
+    .step-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.65rem 0.5rem;
+      border-radius: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+    .step-btn:hover {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: var(--accent-blue);
+      color: var(--text-white);
+    }
+    .step-btn.active {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: var(--text-white);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    @media (max-width: 900px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+    }
+    .card h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .dialogue-turn {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .dialogue-turn.agent {
+      border-left: 4px solid var(--accent-blue);
+    }
+    .dialogue-turn.customer {
+      border-left: 4px solid var(--accent-amber);
+    }
+    .speaker-name {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.25rem;
+    }
+    .speaker-name.agent { color: var(--accent-cyan); }
+    .speaker-name.customer { color: var(--accent-amber); }
+    .dialogue-text {
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }
+    .spec-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.9rem;
+    }
+    .spec-item:last-child { border-bottom: none; }
+    .spec-label { color: var(--text-muted); }
+    .spec-val { font-weight: 600; font-family: monospace; color: var(--accent-cyan); }
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>⚡</span>
+      <span>BARTA AI</span>
+    </div>
+    <div class="badge-live">
+      <div class="pulse-dot"></div>
+      Live Engine & Telephony Ready
+    </div>
+  </header>
+
+  <main>
+    <div class="hero-banner">
+      <h1>Autonomous Outbound Voice Sales Platform</h1>
+      <p>Converting customer contact lists into verified orders with intelligent Indian Hinglish voice dialogue and instant order delivery.</p>
+    </div>
+
+    <div class="player-container">
+      <div class="video-wrapper">
+        <video id="demoVideo" controls poster="brag.jpg">
+          <source src="brag.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+
+      <div class="stepper">
+        <button class="step-btn active" onclick="seekTo(0)">1. Title Card</button>
+        <button class="step-btn" onclick="seekTo(3.5)">2. Overview & Problem</button>
+        <button class="step-btn" onclick="seekTo(13.0)">3. Step 1: Campaign</button>
+        <button class="step-btn" onclick="seekTo(23.5)">4. Step 2: CSV Import</button>
+        <button class="step-btn" onclick="seekTo(34.0)">5. Live Phone Call</button>
+        <button class="step-btn" onclick="seekTo(67.0)">6. Instant Order Mail</button>
+        <button class="step-btn" onclick="seekTo(76.5)">7. Gnani AI Stack</button>
+        <button class="step-btn" onclick="seekTo(97.5)">8. Outro</button>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Left: Dialogue Script Reference -->
+      <div class="card">
+        <h2>🗣️ Verified Outbound Call Script (Hinglish)</h2>
+        <div class="dialogue-turn agent">
+          <div class="speaker-name agent">Agent (Shubham Voice Profile)</div>
+          <div class="dialogue-text">"Hi, kya mai Tanmay se baat kar raha hoon?"</div>
+        </div>
+        <div class="dialogue-turn customer">
+          <div class="speaker-name customer">Customer (Tanmay)</div>
+          <div class="dialogue-text">"Haan, boliye kaun?"</div>
+        </div>
+        <div class="dialogue-turn agent">
+          <div class="speaker-name agent">Agent (Shubham Voice Profile)</div>
+          <div class="dialogue-text">"Main Shubham hoon Curated India se. Main aapko hamare store ke naye drop ke baare mein batane ke liye call kar raha hoon. Kya aap product ke details dekhna chahenge?"</div>
+        </div>
+        <div class="dialogue-turn customer">
+          <div class="speaker-name customer">Customer (Tanmay)</div>
+          <div class="dialogue-text">"Haan email aur WhatsApp pe bhej do."</div>
+        </div>
+        <div class="dialogue-turn agent">
+          <div class="speaker-name agent">Agent (Shubham Voice Profile)</div>
+          <div class="dialogue-text">"Bilkul! Maine aapke email aur WhatsApp par secure link aur catalog bhej diya hai. Thank you!"</div>
+        </div>
+      </div>
+
+      <!-- Right: Technical Gnani Architecture -->
+      <div class="card">
+        <h2>⚡ Speech Infrastructure — Powered by Gnani AI</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+          Closed-loop real-time audio pipeline engineered specifically for Indian regional accents and dialect mixing.
+        </p>
+        <div class="spec-item">
+          <span class="spec-label">STT Speech-to-Text Model:</span>
+          <span class="spec-val">Gnani Prisma (v2.5 / v3.0)</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">STT Audio Protocol:</span>
+          <span class="spec-val">WebSocket · 8 kHz Raw PCM</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">TTS Text-to-Speech Model:</span>
+          <span class="spec-val">Gnani Timbre (v2.0 / v3.0)</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">TTS Voice Persona:</span>
+          <span class="spec-val">Shubham (Indian Male Sales)</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">TTS Synthesis Format:</span>
+          <span class="spec-val">Linear 8 kHz PCM Audio</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">End-to-End Latency:</span>
+          <span class="spec-val">&lt; 500ms Human Cadence</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Follow-Up Action:</span>
+          <span class="spec-val">Instant Secure Order Link</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    BARTA AI — Autonomous Outbound Voice Sales Platform · Built with Next.js, FastAPI & Gnani AI
+  </footer>
+
+  <script>
+    const video = document.getElementById('demoVideo');
+    function seekTo(sec) {
+      video.currentTime = sec;
+      video.play();
+      updateButtons(sec);
+    }
+    function updateButtons(sec) {
+      const buttons = document.querySelectorAll('.step-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      const timestamps = [0, 3.5, 13.0, 23.5, 34.0, 67.0, 76.5, 97.5];
+      let activeIdx = 0;
+      for (let i = 0; i < timestamps.length; i++) {
+        if (sec >= timestamps[i]) activeIdx = i;
+      }
+      buttons[activeIdx].classList.add('active');
+    }
+    video.addEventListener('timeupdate', () => {
+      updateButtons(video.currentTime);
+    });
+  </script>
+</body>
+</html>
+

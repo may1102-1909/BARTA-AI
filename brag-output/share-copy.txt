@@ -1,0 +1,8 @@
+Meet BARTA AI — the autonomous outbound AI voice sales platform built for modern commerce in India. 
+
+Upload a customer list, launch a campaign in seconds, and let your AI voice agent call leads, handle real-time conversations in natural Hinglish, and confirm orders directly to your dashboard. 
+
+Powered by Gnani AI's Prisma STT and Timbre TTS ("Shubham" voice profile) for human-like conversational voice. 
+
+Explore the open-source platform on GitHub: https://github.com/may1102-1909/BARTA-AI
+

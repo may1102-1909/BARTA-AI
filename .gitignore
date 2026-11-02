@@ -39,3 +39,8 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
+# Brag video work buffers
+brag-output/work/*.wav
+brag-output/work/audio/
+brag-output/work/test_frames/
+
