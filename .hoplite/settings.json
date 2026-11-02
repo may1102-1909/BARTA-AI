@@ -1,0 +1,16 @@
+{
+  "scripts": {
+    "run": {
+      "command": "bash .hoplite/run.sh"
+    }
+  },
+  "ports": {
+    "preview": 3000,
+    "additional": [
+      {
+        "name": "backend",
+        "port": 8000
+      }
+    ]
+  }
+}
