@@ -158,6 +158,13 @@ class CampaignDispatcher:
                         call.twilio_sid = sid
                         call.status = "in-progress"
                         await session.commit()
+                    else:
+                        call.status = "failed"
+                        call.outcome = "twilio_dial_failed"
+                        call.ended_at = datetime.now(timezone.utc)
+                        contact.status = "failed"
+                        self._active_call_slots[campaign_id].discard(call.id)
+                        await session.commit()
 
             except Exception as e:
                 logger.error(f"Error in campaign loop for {campaign_id}: {e}", exc_info=True)

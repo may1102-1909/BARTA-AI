@@ -378,7 +378,7 @@ async def import_contacts_csv(
         phone = norm_row.get("phone") or norm_row.get("phone_number") or norm_row.get("mobile")
         email = norm_row.get("email")
         language = norm_row.get("language") or norm_row.get("preferred_language") or "hinglish"
-        notes = norm_row.get("notes") or norm_row.get("remark")
+        notes = norm_row.get("notes") or norm_row.get("remark") or norm_row.get("reason_for_calling")
 
         if not name:
             rejected.append({"row": idx, "reason": "Missing contact name"})

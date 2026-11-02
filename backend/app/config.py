@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # Twilio
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_API_KEY_SID: Optional[str] = None
+    TWILIO_API_KEY_SECRET: Optional[str] = None
     TWILIO_PHONE_NUMBER: str = ""
     TWILIO_WEBHOOK_URL: str = "http://localhost:8000"
     TWILIO_WHATSAPP_NUMBER: str = "whatsapp:+14155238886"

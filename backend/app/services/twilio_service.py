@@ -10,12 +10,21 @@ class TwilioService:
     def __init__(self):
         self.account_sid = settings.TWILIO_ACCOUNT_SID
         self.auth_token = settings.TWILIO_AUTH_TOKEN
+        self.api_key_sid = settings.TWILIO_API_KEY_SID
+        self.api_key_secret = settings.TWILIO_API_KEY_SECRET
         self.phone_number = settings.TWILIO_PHONE_NUMBER
         self.client = None
 
-        if self.account_sid and self.auth_token:
+        if self.api_key_sid and self.api_key_secret and self.account_sid:
+            try:
+                self.client = Client(self.api_key_sid, self.api_key_secret, self.account_sid)
+                logger.info("Initialized Twilio Client using API Key SID & Secret.")
+            except Exception as e:
+                logger.error(f"Failed to initialize Twilio client with API Key: {e}")
+        elif self.account_sid and self.auth_token:
             try:
                 self.client = Client(self.account_sid, self.auth_token)
+                logger.info("Initialized Twilio Client using Account SID & Auth Token.")
             except Exception as e:
                 logger.error(f"Failed to initialize Twilio client: {e}")
 
