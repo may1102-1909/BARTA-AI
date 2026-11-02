@@ -82,26 +82,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   )}
                 />
                 <span className="flex-1 truncate">{label}</span>
-                {active ? (
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
-                ) : (
-                  <span className="h-1.5 w-1.5 rounded-full bg-transparent transition-all duration-200 group-hover:bg-slate-300" />
-                )}
               </Link>
             );
           })}
         </nav>
 
-        <div className="border-t border-slate-200/80 px-5 py-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-              Voice agent workspace
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/20">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              LIVE
-            </span>
-          </div>
+        <div className="border-t border-slate-200/80 px-5 py-4 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+          Voice agent workspace
         </div>
       </aside>
     </>

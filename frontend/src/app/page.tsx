@@ -76,7 +76,6 @@ export default function OverviewPage() {
     <div className="space-y-6 pb-12">
       <PageHeader
         title="Overview"
-        meta={<StatusChip tone="live" label="Live" />}
         actions={
           <>
             <Link href="/campaigns" className={buttonClass("secondary", "sm")}>
