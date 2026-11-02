@@ -26,20 +26,46 @@ router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
 DEFAULT_SCRIPTS = {
     "hinglish": (
-        "[Opening & Verification]\n"
-        "Agent: \"Namaste! Kya meri baat customer se ho rahi hai?\"\n"
-        "Customer: \"Haan, boliye kaun?\"\n"
-        "Agent: \"Namaste! Main BARTA AI representative bol raha hoon CURATED India ki taraf se. Sir/Ma'am, maine aapko humare exclusive festive drop ke baare mein brief karne ke liye call kiya hai. Kya aapke paas 2 minute honge?\"\n\n"
-        "[Value Pitch & Offer]\n"
-        "Agent: \"Thank you! Humne launch kiya hai handcrafted 100% pure organic linen kurtas, tailored specifically for modern festive gatherings. Fabric ultra-breathable hai, zero shrinkage hai, aur pre-washed natural dyes se bana hai.\"\n"
-        "Customer: \"Price kitna hai?\"\n"
-        "Agent: \"Normal price Rs 1899 hai, lekin festive discount ke under flat Rs 1499 mein mil raha hai with Free Express Shipping and 7-day hassle-free replacement!\"\n\n"
-        "[Objection Handling]\n"
-        "If Customer is busy: \"Koi problem nahi sir/ma'am! Kya main aapko 2 ghante baad ya kal dopahar call karoon?\"\n"
-        "If Customer wants WhatsApp link: \"Bilkul! Main abhi aapke WhatsApp par product catalog, photos aur size chart share kar deta hoon.\"\n\n"
-        "[Closing & Action Trigger]\n"
-        "Agent: \"Kya main aapko WhatsApp catalog ping kar doon, ya aap abhi confirm karke direct order book karna chahenge?\"\n"
-        "Agent: \"Shukriya aapke samay ke liye, have a wonderful day!\""
+        "{\n"
+        "  \"platform\": \"BARTA ai\",\n"
+        "  \"brand\": \"Curated India\",\n"
+        "  \"agent\": \"Shubham\",\n"
+        "  \"customer\": \"Tanmay\",\n"
+        "  \"state_machine\": {\n"
+        "    \"1_opening\": {\n"
+        "      \"speaker\": \"agent\",\n"
+        "      \"text\": \"Hi, kya mai Tanmay se baat kar raha hoon?\",\n"
+        "      \"branches\": {\n"
+        "        \"busy\": \"2_branch_a_busy\",\n"
+        "        \"confirmed\": \"3_branch_b_language\"\n"
+        "      }\n"
+        "    },\n"
+        "    \"2_branch_a_busy\": {\n"
+        "      \"user\": \"Main abhi busy hoon / Not a good time.\",\n"
+        "      \"agent\": \"Koi baat nahi, kya mai aapko 2 ghante baad ya kal call karoon?\",\n"
+        "      \"if_2_hours\": {\n"
+        "        \"agent\": \"Theek hai, 2 ghante baad call karunga.\",\n"
+        "        \"action\": \"schedule_callback(2_hours)\"\n"
+        "      }\n"
+        "    },\n"
+        "    \"3_branch_b_language\": {\n"
+        "      \"user\": \"Haan, boliye.\",\n"
+        "      \"agent\": \"Aap kis bhasha mein comfortable hain—Hindi, English, ya Hinglish?\",\n"
+        "      \"next\": \"4_pitch\"\n"
+        "    },\n"
+        "    \"4_pitch\": {\n"
+        "      \"agent\": \"Main Shubham hoon Curated India se. Main aapko hamare store ke naye drop ke baare mein batane ke liye call kar raha hoon. Kya aap product ke details dekhna chahenge?\",\n"
+        "      \"transitions\": {\n"
+        "        \"interested_whatsapp_or_email\": \"5_closing\"\n"
+        "      }\n"
+        "    },\n"
+        "    \"5_closing\": {\n"
+        "      \"user\": \"Haan WhatsApp/email pe bhej do.\",\n"
+        "      \"agent\": \"Bilkul! Maine aapke WhatsApp aur email par secure order link aur catalog share kar diya hai. Thank you so much, have a great day!\",\n"
+        "      \"action\": \"send_secure_link_and_catalog\"\n"
+        "    }\n"
+        "  }\n"
+        "}"
     ),
     "hindi": (
         "[नमस्ते और परिचय]\n"
@@ -170,28 +196,35 @@ async def generate_script(payload: ScriptGenerateRequest):
 
     try:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        lang_instruction = (
-            "Natural conversational Hinglish (blend of Hindi and English as used in everyday Indian sales)"
-            if lang_key == "hinglish"
-            else "Natural polite Hindi"
-            if lang_key == "hindi"
-            else "Professional, warm, clear Indian English"
-        )
-        prompt = (
-            f"You are an expert sales scriptwriter and voice AI engineer for Indian brands.\n"
-            f"Write a concise ~2-minute outbound phone call script (under 800 words, ideally 250-450 words) "
-            f"for an AI voice agent calling a prospective customer.\n\n"
-            f"Language: {lang_instruction}\n"
-            f"Campaign Goal: {payload.goal}\n"
-            f"Product URL: {payload.product_url or 'https://curatedindia.vercel.app'}\n\n"
-            f"Structure the script into clear conversational stages:\n"
-            f"1. [Warm Greeting & Verification] - Confirm contact identity politely.\n"
-            f"2. [Context & Icebreaker] - Brief statement on why the agent is calling.\n"
-            f"3. [Core Value Pitch & Offer] - Highlight product benefits, pricing, and discount.\n"
-            f"4. [Objection Handling] - What to say if caller says 'I am busy', 'Too expensive', or 'Send on WhatsApp'.\n"
-            f"5. [Call-to-Action & Closing] - Either confirm order details or send catalog link via WhatsApp, ending with gratitude.\n\n"
-            f"Format with speaker tags (Agent:, Customer:). Keep turns concise, punchy, and natural for text-to-speech voice generation. Do not include asterisks or decorative markdown."
-        )
+        if lang_key == "hinglish":
+            prompt = (
+                "You are an expert scriptwriter for BARTA ai, an outbound voice sales platform. \n"
+                "Generate a JSON-structured voice agent script for an e-commerce brand named \"Curated India\" selling a new fashion drop to a customer named Tanmay.\n\n"
+                "The script must strictly follow this state machine and dialogue flow:\n"
+                "1. Opening line (Hinglish): \"Hi, kya mai Tanmay se baat kar raha hoon?\"\n"
+                "2. Branch A (Busy response): If user says they are busy, ask: \"Koi baat nahi, kya mai aapko 2 ghante baad ya kal call karoon?\" If they specify 2 hours, acknowledge it (\"Theek hai, 2 ghante baad call karunga\") and schedule a callback.\n"
+                "3. Branch B (Confirmation / continuation): If user confirms identity, ask: \"Aap kis bhasha mein comfortable hain—Hindi, English, ya Hinglish?\"\n"
+                "4. Pitch (After language choice): \"Main Shubham hoon Curated India se. Main aapko hamare store ke naye drop ke baare mein batane ke liye call kar raha hoon. Kya aap product ke details dekhna chahenge?\"\n"
+                "5. Closing: If user says \"haan WhatsApp/email pe bhej do\", confirm sending the secure link.\n\n"
+                "Output the script clearly with conditional branches and speaker turns. Keep sentences short and conversational."
+            )
+        else:
+            lang_instruction = (
+                "Natural polite Hindi"
+                if lang_key == "hindi"
+                else "Professional, warm, clear Indian English"
+            )
+            prompt = (
+                f"You are an expert scriptwriter for BARTA ai, an outbound voice sales platform.\n"
+                f"Generate a JSON-structured voice agent script for an e-commerce brand named \"Curated India\" selling a new fashion drop to a customer named Tanmay in {lang_instruction}.\n\n"
+                f"The script must strictly follow this state machine and dialogue flow:\n"
+                f"1. Opening line: Confirm customer identity politely.\n"
+                f"2. Branch A (Busy response): If user says they are busy, ask if you can call back in 2 hours or tomorrow, and schedule callback.\n"
+                f"3. Branch B (Confirmation / continuation): Inquire language comfort or proceed directly to pitch.\n"
+                f"4. Pitch: Introduce as Shubham from Curated India, share the new fashion drop details and ask if they would like product details.\n"
+                f"5. Closing: If user says send to WhatsApp or email, confirm sending the secure link.\n\n"
+                f"Output the script clearly with conditional branches and speaker turns. Keep sentences short and conversational."
+            )
 
         resp = client.models.generate_content(
             model=settings.GEMINI_MODEL,

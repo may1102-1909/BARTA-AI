@@ -60,16 +60,18 @@ app.include_router(public_forms.router)
 app.include_router(twilio_media.router)
 app.include_router(simulator.router)
 
-@app.post("/twilio/voice")
+@app.api_route("/twilio/voice", methods=["GET", "POST"])
 async def twilio_voice(request: Request):
-    # This immediately connects Twilio to your backend WebSocket
-    twiml = """<?xml version="1.0" encoding="UTF-8"?>
+    # This TwiML script tells Twilio what to do when the call connects
+    twiml_content = """<?xml version="1.0" encoding="UTF-8"?>
     <Response>
         <Connect>
             <Stream url="wss://unstable-roundish-giblet.ngrok-free.dev/twilio/media" />
         </Connect>
     </Response>"""
-    return HTMLResponse(content=twiml, media_type="application/xml")
+    
+    # Return as XML so Twilio reads it, and if you load it in Chrome it will render cleanly
+    return HTMLResponse(content=twiml_content, media_type="application/xml")
 
 @app.get("/")
 async def root():
