@@ -1,31 +1,103 @@
 import io
 import csv
 import re
+import logging
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import select, func, and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.config import settings
 from app.database import get_db
 from app.models import Campaign, Contact, Call, Product, Order
 from app.services.dispatcher import dispatcher
 
+logger = logging.getLogger(__name__)
+
+try:
+    from google import genai
+except ImportError:
+    genai = None
+
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
+
+DEFAULT_SCRIPTS = {
+    "hinglish": (
+        "[Opening & Verification]\n"
+        "Agent: \"Namaste! Kya meri baat customer se ho rahi hai?\"\n"
+        "Customer: \"Haan, boliye kaun?\"\n"
+        "Agent: \"Namaste! Main BARTA AI representative bol raha hoon CURATED India ki taraf se. Sir/Ma'am, maine aapko humare exclusive festive drop ke baare mein brief karne ke liye call kiya hai. Kya aapke paas 2 minute honge?\"\n\n"
+        "[Value Pitch & Offer]\n"
+        "Agent: \"Thank you! Humne launch kiya hai handcrafted 100% pure organic linen kurtas, tailored specifically for modern festive gatherings. Fabric ultra-breathable hai, zero shrinkage hai, aur pre-washed natural dyes se bana hai.\"\n"
+        "Customer: \"Price kitna hai?\"\n"
+        "Agent: \"Normal price Rs 1899 hai, lekin festive discount ke under flat Rs 1499 mein mil raha hai with Free Express Shipping and 7-day hassle-free replacement!\"\n\n"
+        "[Objection Handling]\n"
+        "If Customer is busy: \"Koi problem nahi sir/ma'am! Kya main aapko 2 ghante baad ya kal dopahar call karoon?\"\n"
+        "If Customer wants WhatsApp link: \"Bilkul! Main abhi aapke WhatsApp par product catalog, photos aur size chart share kar deta hoon.\"\n\n"
+        "[Closing & Action Trigger]\n"
+        "Agent: \"Kya main aapko WhatsApp catalog ping kar doon, ya aap abhi confirm karke direct order book karna chahenge?\"\n"
+        "Agent: \"Shukriya aapke samay ke liye, have a wonderful day!\""
+    ),
+    "hindi": (
+        "[नमस्ते और परिचय]\n"
+        "एजेंट: \"नमस्ते! क्या मेरी बात ग्राहक महोदय से हो रही है?\"\n"
+        "ग्राहक: \"हाँ, बोलिए।\"\n"
+        "एजेंट: \"नमस्ते! मैं CURATED India की तरफ से बात कर रहा हूँ। आज मैं आपको हमारे नए फेस्टिव कलेक्शन के बारे में जानकारी देने के लिए संपर्क कर रहा हूँ। क्या आपके पास 2 मिनट का समय होगा?\"\n\n"
+        "[उत्पाद और विशेष छूट]\n"
+        "एजेंट: \"धन्यवाद! हमारे नए 100% प्योर ऑर्गेनिक लिनेन कुर्ते लॉन्च हो चुके हैं, जो बेहद आरामदायक और प्रीमियम क्वालिटी के हैं। इस त्यौहार के अवसर पर आपको फ्लैट ₹1,499 में फ्री डिलीवरी और 7 दिनों की आसान रिटर्न सुविधा के साथ मिल रहा है।\"\n\n"
+        "[संवाद व सहायता]\n"
+        "ग्राहक व्यस्त होने पर: \"कोई समस्या नहीं! क्या मैं आपको 2 घंटे बाद या कल कॉल कर सकता हूँ?\"\n"
+        "व्हाट्सएप कैटलॉग के लिए: \"बिल्कुल! मैं अभी आपके व्हाट्सएप पर पूरा कलेक्शन और साइज चार्ट भेज रहा हूँ।\"\n\n"
+        "[समापन और कॉल टू एक्शन]\n"
+        "एजेंट: \"क्या आप अभी ऑर्डर कन्फर्म करना चाहेंगे या व्हाट्सएप पर कैटलॉग देखना पसंद करेंगे? धन्यवाद, आपका दिन शुभ हो!\""
+    ),
+    "english": (
+        "[Introduction & Verification]\n"
+        "Agent: \"Hello! Am I speaking with the customer?\"\n"
+        "Customer: \"Yes, who is this?\"\n"
+        "Agent: \"Hi! This is the outbound representative from CURATED India. I'm reaching out with a quick 2-minute update regarding our newly launched festive collection. Do you have a moment?\"\n\n"
+        "[Value Proposition & Offer]\n"
+        "Agent: \"Wonderful! We've introduced our 100% handcrafted organic linen kurtas, designed for breathable comfort and modern festivities. While the standard retail price is Rs 1899, our limited festive promotion gives you a flat price of Rs 1499 with free express shipping across India and an easy 7-day exchange guarantee.\"\n\n"
+        "[Objection Handling & Nuance]\n"
+        "If Customer is Busy: \"No problem at all! Would you prefer a callback in 2 hours or tomorrow morning?\"\n"
+        "If Customer wants digital catalog: \"Certainly! I can send the lookbook, high-res photos, and size guide directly to your WhatsApp right away.\"\n\n"
+        "[Call-to-Action & Graceful Exit]\n"
+        "Agent: \"Would you like me to reserve your size today, or should I ping you the complete catalog on WhatsApp? Thank you so much for your time, and have a wonderful day!\""
+    )
+}
+
+class ScriptGenerateRequest(BaseModel):
+    goal: str
+    product_url: Optional[str] = None
+    language: str = "hinglish" # "hindi", "english", "hinglish"
+
+class ScriptGenerateResponse(BaseModel):
+    script: str
+    language: str
+    word_count: int
 
 class CampaignCreate(BaseModel):
     name: str
     product_id: Optional[str] = "curated-linen-kurta-01"
+    product_url: Optional[str] = None
     goal: str = "Introduce the CURATED Minimalist Linen Kurta festive offer and confirm orders."
     max_concurrent: int = 1
-    window_start: str = "09:00"
-    window_end: str = "20:00"
+    window_start: str = "00:00"
+    window_end: str = "23:59"
     retry_limit: int = 2
+    script: Optional[str] = None
+    language: Optional[str] = "hinglish"
 
 class CampaignResponse(BaseModel):
     id: str
     name: str
     product_id: str
+    product_url: Optional[str] = None
+    script: Optional[str] = None
+    language: Optional[str] = "hinglish"
     goal: str
     max_concurrent: int
     window_start: str
@@ -64,6 +136,9 @@ async def list_campaigns(db: AsyncSession = Depends(get_db)):
             "id": camp.id,
             "name": camp.name,
             "product_id": camp.product_id,
+            "product_url": getattr(camp, "product_url", None),
+            "script": getattr(camp, "script", None),
+            "language": getattr(camp, "language", "hinglish") or "hinglish",
             "goal": camp.goal,
             "max_concurrent": camp.max_concurrent,
             "window_start": camp.window_start,
@@ -77,6 +152,112 @@ async def list_campaigns(db: AsyncSession = Depends(get_db)):
         })
     return output
 
+@router.post("/generate-script", response_model=ScriptGenerateResponse)
+async def generate_script(payload: ScriptGenerateRequest):
+    """
+    Generates an authentic ~2-minute outbound call script (under 800 words)
+    using Gemini, customized for Goal, Product URL, and Language (Hindi, English, Hinglish).
+    """
+    lang_key = (payload.language or "hinglish").lower().strip()
+    fallback = DEFAULT_SCRIPTS.get(lang_key, DEFAULT_SCRIPTS["hinglish"])
+
+    if not settings.GEMINI_API_KEY or not genai:
+        return ScriptGenerateResponse(
+            script=fallback,
+            language=lang_key,
+            word_count=len(fallback.split())
+        )
+
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        lang_instruction = (
+            "Natural conversational Hinglish (blend of Hindi and English as used in everyday Indian sales)"
+            if lang_key == "hinglish"
+            else "Natural polite Hindi"
+            if lang_key == "hindi"
+            else "Professional, warm, clear Indian English"
+        )
+        prompt = (
+            f"You are an expert sales scriptwriter and voice AI engineer for Indian brands.\n"
+            f"Write a concise ~2-minute outbound phone call script (under 800 words, ideally 250-450 words) "
+            f"for an AI voice agent calling a prospective customer.\n\n"
+            f"Language: {lang_instruction}\n"
+            f"Campaign Goal: {payload.goal}\n"
+            f"Product URL: {payload.product_url or 'https://curatedindia.vercel.app'}\n\n"
+            f"Structure the script into clear conversational stages:\n"
+            f"1. [Warm Greeting & Verification] - Confirm contact identity politely.\n"
+            f"2. [Context & Icebreaker] - Brief statement on why the agent is calling.\n"
+            f"3. [Core Value Pitch & Offer] - Highlight product benefits, pricing, and discount.\n"
+            f"4. [Objection Handling] - What to say if caller says 'I am busy', 'Too expensive', or 'Send on WhatsApp'.\n"
+            f"5. [Call-to-Action & Closing] - Either confirm order details or send catalog link via WhatsApp, ending with gratitude.\n\n"
+            f"Format with speaker tags (Agent:, Customer:). Keep turns concise, punchy, and natural for text-to-speech voice generation. Do not include asterisks or decorative markdown."
+        )
+
+        resp = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt
+        )
+        if resp.text and resp.text.strip():
+            script_text = resp.text.strip()
+            return ScriptGenerateResponse(
+                script=script_text,
+                language=lang_key,
+                word_count=len(script_text.split())
+            )
+    except Exception as e:
+        logger.warning(f"Gemini script generation failed: {e}. Returning tailored default script.")
+
+    return ScriptGenerateResponse(
+        script=fallback,
+        language=lang_key,
+        word_count=len(fallback.split())
+    )
+
+@router.post("/parse-script-doc")
+async def parse_script_doc(file: UploadFile = File(...)):
+    """
+    Parses an uploaded Microsoft Word (.docx) document (up to 50MB) and returns
+    its extracted script text.
+    """
+    filename = file.filename or ""
+    if not filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only Word document (.docx) files are supported.")
+
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds maximum allowed 50MB limit.")
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as z:
+            if "word/document.xml" not in z.namelist():
+                raise HTTPException(status_code=400, detail="Invalid .docx file (missing word/document.xml).")
+            xml_data = z.read("word/document.xml")
+            root = ET.fromstring(xml_data)
+
+            paragraphs = []
+            for p in root.iter():
+                if p.tag.endswith("}p") or p.tag == "p":
+                    text_parts = [t.text for t in p.iter() if (t.tag.endswith("}t") or t.tag == "t") and t.text]
+                    para_text = "".join(text_parts).strip()
+                    if para_text:
+                        paragraphs.append(para_text)
+
+            extracted = "\n\n".join(paragraphs).strip()
+            if not extracted:
+                raise HTTPException(status_code=400, detail="No readable text found in the uploaded Word document.")
+
+            return {
+                "script": extracted,
+                "filename": filename,
+                "size": len(content),
+                "word_count": len(extracted.split())
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error parsing .docx: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read Word document: {str(e)}")
+
 @router.post("")
 async def create_campaign(payload: CampaignCreate, db: AsyncSession = Depends(get_db)):
     # Verify product exists or use default
@@ -89,11 +270,14 @@ async def create_campaign(payload: CampaignCreate, db: AsyncSession = Depends(ge
     campaign = Campaign(
         name=payload.name,
         product_id=product.id if product else "default",
+        product_url=payload.product_url,
         goal=payload.goal,
         max_concurrent=payload.max_concurrent,
-        window_start=payload.window_start,
-        window_end=payload.window_end,
+        window_start=payload.window_start or "00:00",
+        window_end=payload.window_end or "23:59",
         retry_limit=payload.retry_limit,
+        script=payload.script,
+        language=payload.language or "hinglish",
         status="draft"
     )
     db.add(campaign)

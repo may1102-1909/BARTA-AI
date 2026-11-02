@@ -6,8 +6,11 @@ export interface Campaign {
   goal: string;
   status: CampaignStatus | string;
   product_id?: string;
-  window_start: string;
-  window_end: string;
+  product_url?: string;
+  script?: string;
+  language?: "hindi" | "english" | "hinglish" | string;
+  window_start?: string;
+  window_end?: string;
   max_concurrent: number;
   retry_limit: number;
   total_contacts?: number;
@@ -19,10 +22,26 @@ export interface Campaign {
 export interface CampaignCreateInput {
   name: string;
   goal: string;
+  product_url?: string;
   max_concurrent: number;
-  window_start: string;
-  window_end: string;
+  window_start?: string;
+  window_end?: string;
   retry_limit: number;
+  script?: string;
+  language?: "hindi" | "english" | "hinglish";
+}
+
+export interface ScriptGenerateResponse {
+  script: string;
+  language: string;
+  word_count: number;
+}
+
+export interface ScriptParseResponse {
+  script: string;
+  filename: string;
+  size: number;
+  word_count: number;
 }
 
 export interface Funnel {

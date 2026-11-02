@@ -11,6 +11,8 @@ import type {
   Order,
   OrderForm,
   OrderFormSubmission,
+  ScriptGenerateResponse,
+  ScriptParseResponse,
   SimulationStart,
   SimulationStartInput,
   SimulationTurn,
@@ -57,6 +59,21 @@ export const api = {
   pauseCampaign: (id: string) => fetchApi<ApiMessage>(`/campaigns/${id}/pause`, { method: "POST" }),
   stopCampaign: (id: string) => fetchApi<ApiMessage>(`/campaigns/${id}/stop`, { method: "POST" }),
   getCampaignStats: (id: string) => fetchApi<CampaignStats>(`/campaigns/${id}/stats`),
+  generateScript: (data: { goal: string; product_url?: string; language?: string }) =>
+    fetchApi<ScriptGenerateResponse>("/campaigns/generate-script", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  parseScriptDoc: async (file: File): Promise<ScriptParseResponse> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/campaigns/parse-script-doc`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) throw new Error(await readError(res, "Failed to parse script document"));
+    return res.json();
+  },
 
   importContactsCsv: async (campaignId: string, file: File): Promise<ImportResult> => {
     const formData = new FormData();

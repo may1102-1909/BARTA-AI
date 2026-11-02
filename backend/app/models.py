@@ -41,6 +41,9 @@ class Campaign(Base):
     window_end = Column(String(10), default="20:00")   # IST "HH:MM"
     retry_limit = Column(Integer, default=2)
     status = Column(String(50), default="draft") # draft, active, paused, completed
+    product_url = Column(Text, nullable=True)
+    script = Column(Text, nullable=True)
+    language = Column(String(50), default="hinglish")
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
     product = relationship("Product", back_populates="campaigns")
