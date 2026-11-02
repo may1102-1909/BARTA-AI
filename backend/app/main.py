@@ -24,19 +24,19 @@ logger = logging.getLogger("barta_ai")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing BARTA ai Voice Platform...")
+    logger.info("Initializing BARTA AI Voice Platform...")
     # 1. Initialize SQLite / PostgreSQL DB & seed products
     await init_db()
     # 2. Start callback scheduler
     scheduler.start()
-    logger.info("BARTA ai successfully started.")
+    logger.info("BARTA AI successfully started.")
     yield
     # Shutdown
-    logger.info("Shutting down BARTA ai...")
+    logger.info("Shutting down BARTA AI...")
     scheduler.stop()
 
 app = FastAPI(
-    title="BARTA ai - Voice Agent Platform",
+    title="BARTA AI - Voice Agent Platform",
     description="Autonomous Outbound AI Voice Agent for B2B & B2C Sales, powered by Gnani AI (Prisma STT & Timbre TTS) and Google Gemini.",
     version="1.0.0",
     lifespan=lifespan
@@ -76,7 +76,7 @@ async def twilio_voice(request: Request):
 @app.get("/")
 async def root():
     return {
-        "platform": "BARTA ai",
+        "platform": "BARTA AI",
         "tagline": "Upload a customer list, press start, and watch orders arrive on your dashboard.",
         "status": "online",
         "gnani_models": {

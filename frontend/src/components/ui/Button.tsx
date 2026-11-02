@@ -13,11 +13,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const variants: Record<Variant, string> = {
-  primary: "bg-navy-900 text-white hover:bg-navy-950 shadow-subtle focus-visible:ring-navy-900/30",
+  primary: "bg-navy-900 text-white hover:bg-navy-950 shadow-subtle hover:shadow-card focus-visible:ring-navy-900/30 active:scale-[0.98]",
   secondary:
-    "bg-white text-navy-900 border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50 shadow-subtle focus-visible:ring-navy-900/15",
-  ghost: "text-slate-600 hover:text-navy-900 hover:bg-slate-100 focus-visible:ring-navy-900/15",
-  danger: "text-red-600 border border-red-200 hover:bg-red-50 focus-visible:ring-red-500/20",
+    "bg-white text-navy-900 border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50 shadow-subtle hover:shadow-card focus-visible:ring-navy-900/15 active:scale-[0.98]",
+  ghost: "text-slate-600 hover:text-navy-900 hover:bg-slate-100 focus-visible:ring-navy-900/15 active:scale-[0.98]",
+  danger: "text-red-600 border border-red-200 hover:bg-red-50 focus-visible:ring-red-500/20 active:scale-[0.98]",
 };
 
 const sizes: Record<Size, string> = {
@@ -30,7 +30,7 @@ export function Button({ variant = "primary", size = "md", icon, className, chil
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center rounded-lg font-semibold tracking-tight transition-colors focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40",
+        "inline-flex items-center justify-center rounded-lg font-bold tracking-tight transition-all duration-150 focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40",
         variants[variant],
         sizes[size],
         className
@@ -45,7 +45,7 @@ export function Button({ variant = "primary", size = "md", icon, className, chil
 
 export const buttonClass = (variant: Variant = "primary", size: Size = "md", className?: string) =>
   cn(
-    "inline-flex items-center justify-center rounded-lg font-semibold tracking-tight transition-colors",
+    "inline-flex items-center justify-center rounded-lg font-bold tracking-tight transition-all duration-150",
     variants[variant],
     sizes[size],
     className
