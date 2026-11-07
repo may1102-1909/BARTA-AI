@@ -186,9 +186,9 @@ You are calling a customer named TANMAY ({self.contact_phone}). You must strictl
 """
 
     def get_initial_greeting(self) -> str:
-        """Returns the mandatory initial opening line for Shubham."""
+        """Returns the initial opening line for the agent."""
         self.state = "opening"
-        return "Hi, mai BARTA AI se baat kr rha hu"
+        return "Hi, main BARTA-AI se baat kar raha hoon. Bataiye, kaise madad kar sakta hoon?"
 
     def _clean_for_speech(self, text: str) -> str:
         """Strips markdown asterisks, hashes, backticks, quotes for pure TTS speech."""

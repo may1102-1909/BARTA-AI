@@ -33,11 +33,12 @@ def get_ngrok_host(request: Request) -> str:
 async def answer_incoming_call(request: Request):
     """
     Telnyx hits this endpoint when your softphone dials out or incoming call arrives.
-    Returns TeXML to instruct Telnyx to establish a bidirectional WebSocket audio stream.
+    Returns TeXML to make the agent speak first, then opens the WebSocket stream.
     """
     ngrok_host = get_ngrok_host(request)
     texml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+    <Say voice="alice" language="hi-IN">Hi, main BARTA-AI se baat kar raha hoon. Bataiye, kaise madad kar sakta hoon?</Say>
     <Connect>
         <Stream url="wss://{ngrok_host}/stream" />
     </Connect>
@@ -254,27 +255,16 @@ async def websocket_endpoint(websocket: WebSocket):
                         tool_handler=handle_agent_tool
                     )
 
-                    # 3. Trigger Opening Line with Gnani Timbre TTS:
-                    # When call connects, bot immediately speaks "Hi, mai BARTA AI se baat kr rha hu" using Shubham voice
-                    greeting_text = "Hi, mai BARTA AI se baat kr rha hu"
-                    logger.info(f"Opening line triggered for Shubham: '{greeting_text}'")
-                    print(f"Triggering opening TTS with voice Shubham: '{greeting_text}'")
+                    # 3. Record Initial Greeting in LLM Context:
+                    # TeXML <Say> speaks first: "Hi, main BARTA-AI se baat kar raha hoon. Bataiye, kaise madad kar sakta hoon?"
+                    # We record it in agent history so LLM knows the conversation has started.
+                    greeting_text = "Hi, main BARTA-AI se baat kar raha hoon. Bataiye, kaise madad kar sakta hoon?"
+                    logger.info(f"Initial greeting active in agent history: '{greeting_text}'")
                     agent.history.append({
                         "speaker": "agent",
                         "text": greeting_text,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     })
-
-                    audio_ulaw = await tts_service.synthesize(greeting_text, voice="Shubham")
-                    frames = AudioConverter.chunk_ulaw(audio_ulaw, frame_ms=20)
-                    for frame in frames:
-                        payload_b64 = AudioConverter.bytes_to_base64(frame)
-                        response_payload = {
-                            "event": "media",
-                            "streamSid": stream_sid,
-                            "media": {"payload": payload_b64}
-                        }
-                        await websocket.send_text(json.dumps(response_payload))
 
             elif event_type == "media":
                 # Audio from softphone/microphone arrives as Base64 encoded mu-law (8kHz)
