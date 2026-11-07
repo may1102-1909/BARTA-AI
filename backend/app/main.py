@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, WebSocket
+from fastapi.responses import HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
@@ -12,8 +12,8 @@ from app.routers import (
     orders,
     callbacks,
     public_forms,
-    twilio_media,
-    simulator
+    simulator,
+    stream_media
 )
 
 logging.basicConfig(
@@ -57,21 +57,26 @@ app.include_router(calls.router)
 app.include_router(orders.router)
 app.include_router(callbacks.router)
 app.include_router(public_forms.router)
-app.include_router(twilio_media.router)
 app.include_router(simulator.router)
+app.include_router(stream_media.router)
 
-@app.api_route("/twilio/voice", methods=["GET", "POST"])
-async def twilio_voice(request: Request):
-    # This TwiML script tells Twilio what to do when the call connects
-    twiml_content = """<?xml version="1.0" encoding="UTF-8"?>
-    <Response>
-        <Connect>
-            <Stream url="wss://unstable-roundish-giblet.ngrok-free.dev/twilio/media" />
-        </Connect>
-    </Response>"""
-    
-    # Return as XML so Twilio reads it, and if you load it in Chrome it will render cleanly
-    return HTMLResponse(content=twiml_content, media_type="application/xml")
+@app.api_route("/answer", methods=["GET", "POST"])
+async def answer_incoming_call(request: Request):
+    """
+    Telnyx hits this endpoint when your softphone dials out or a call is received.
+    We return TeXML to instruct Telnyx to route bidirectional audio to /stream WebSocket.
+    """
+    return await stream_media.answer_incoming_call(request)
+
+@app.websocket("/stream")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Telnyx bidirectional audio streaming endpoint powered by:
+    1. Gnani Timbre TTS (Voice: Shubham) for opening line & speech synthesis.
+    2. Gnani Prisma STT for converting user speech to text.
+    3. Gemini LLM agent for dialogue management and sales flow.
+    """
+    await stream_media.websocket_endpoint(websocket)
 
 @app.get("/")
 async def root():
@@ -91,7 +96,6 @@ async def root():
 async def health_check():
     return {
         "status": "healthy",
-        "twilio_configured": bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN),
         "gnani_configured": bool(settings.GNANI_API_KEY),
         "gemini_configured": bool(settings.GEMINI_API_KEY),
         "resend_configured": bool(settings.RESEND_API_KEY)
@@ -100,4 +104,3 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=True)
-

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     BASE_URL: str = "http://localhost:8000"
     FRONTEND_URL: str = "http://localhost:3000"
     ENVIRONMENT: str = "development"
+    PUBLIC_URL: str = "https://unstable-roundish-giblet.ngrok-free.dev"
 
     # Twilio
     TWILIO_ACCOUNT_SID: str = ""
