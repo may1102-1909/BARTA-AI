@@ -255,9 +255,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
 
                     # 3. Trigger Opening Line with Gnani Timbre TTS:
-                    # When call connects, bot immediately speaks "Hi, kya mai Tanmay se baat kar raha hoon?"
-                    greeting_text = agent.get_initial_greeting()
+                    # When call connects, bot immediately speaks "Hi, mai BARTA AI se baat kr rha hu" using Shubham voice
+                    greeting_text = "Hi, mai BARTA AI se baat kr rha hu"
                     logger.info(f"Opening line triggered for Shubham: '{greeting_text}'")
+                    print(f"Triggering opening TTS with voice Shubham: '{greeting_text}'")
                     agent.history.append({
                         "speaker": "agent",
                         "text": greeting_text,
@@ -324,3 +325,4 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if campaign_id:
                 dispatcher.on_call_completed(campaign_id, call_id)
+
