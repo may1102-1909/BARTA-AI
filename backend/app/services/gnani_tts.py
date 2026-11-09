@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class GnaniTimbreTTS:
     """
     Synthesizes speech using Gnani AI Timbre TTS model (v2.0)
-    and formats it into 8 kHz μ-law audio ready for Twilio streaming.
+    and formats it into 8 kHz μ-law audio ready for telephony streaming.
     """
 
     def __init__(self):

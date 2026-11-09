@@ -14,15 +14,6 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     PUBLIC_URL: str = "https://unstable-roundish-giblet.ngrok-free.dev"
 
-    # Twilio
-    TWILIO_ACCOUNT_SID: str = ""
-    TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_API_KEY_SID: Optional[str] = None
-    TWILIO_API_KEY_SECRET: Optional[str] = None
-    TWILIO_PHONE_NUMBER: str = ""
-    TWILIO_WEBHOOK_URL: str = "http://localhost:8000"
-    TWILIO_WHATSAPP_NUMBER: str = "whatsapp:+14155238886"
-
     # Gnani AI (Prisma STT + Timbre TTS)
     GNANI_API_KEY: str = ""
     GNANI_STT_WS_URL: str = "wss://api.vachana.ai/stt/v3/stream"

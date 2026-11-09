@@ -51,7 +51,7 @@ Small and mid-size Indian businesses lose sales because follow-up calls are slow
 
 ### MVP (must ship)
 - Contact list upload (CSV) and campaign creation
-- Outbound calling via Twilio with real-time voice loop (Prisma → LLM → Timbre)
+- Outbound calling via telephony media stream with real-time voice loop (Prisma → LLM → Timbre)
 - Structured call outcomes saved to the database
 - Owner dashboard: funnel, calls, orders, callbacks, transcripts
 - Order confirmation by voice, followed by an email with an order and delivery details form
@@ -111,10 +111,10 @@ Everything listed under non-goals.
 ### 6.2 Voice agent
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-5 | Place outbound calls through Twilio Programmable Voice and stream audio over a bidirectional Media Stream WebSocket. | Must |
+| FR-5 | Place outbound calls through telephony provider and stream audio over a bidirectional Media Stream WebSocket. | Must |
 | FR-6 | Transcribe caller speech in real time with Gnani Prisma. | Must |
 | FR-7 | Generate replies with an LLM (cloud model or local Ollama model) using campaign, product and contact context. | Must |
-| FR-8 | Speak replies with Gnani Timbre, streamed back to Twilio. | Must |
+| FR-8 | Speak replies with Gnani Timbre, streamed back to telephony stream. | Must |
 | FR-9 | Support barge-in: if the customer starts speaking, stop agent audio and listen. | Should |
 | FR-10 | Converse in Hindi, English and Hinglish, matching the customer’s language. | Must |
 | FR-11 | Handle no-answer, busy and voicemail. Retry up to the campaign limit, spaced at least 2 hours apart. | Must |
@@ -156,8 +156,6 @@ Everything listed under non-goals.
 | FR-26 | Answer inbound product and order questions using the same LLM with the same guardrails. | Could |
 | FR-27 | Log every message in the messages table and show it in the contact timeline. | Could |
 
-*Note:* Use Twilio WhatsApp sandbox for demo.
-
 ### 6.7 Dashboard
 | ID | Requirement | Priority |
 |---|---|---|
@@ -178,23 +176,23 @@ Everything listed under non-goals.
 - Rules:
   - Atomic mark of contact state (`dialing`) before dispatch.
   - Dispatcher fills free slots as calls finish.
-  - Respect Twilio limits & Gnani balance.
+  - Respect concurrency limits & Gnani balance.
   - Respect calling window.
 
 ---
 
 ## 8. System Architecture
 - **Frontend:** Next.js (Tailwind CSS, Lucide Icons, Apple-inspired clean UI) & Public order form page.
-- **Backend:** FastAPI (Python 3.11) with WebSocket endpoint `/twilio/media`, webhooks, campaign dispatcher, callback scheduler.
+- **Backend:** FastAPI (Python 3.11) with WebSocket endpoint `/stream`, webhooks, campaign dispatcher, callback scheduler.
 - **Database:** Supabase (PostgreSQL) + Realtime, with robust local fallback for standalone execution.
-- **Telephony:** Twilio Programmable Voice + Media Streams (8 kHz audio).
+- **Telephony:** Programmable Voice + Media Streams (8 kHz audio).
 - **Speech:** Gnani Prisma (STT - `wss://api.vachana.ai/stt/v3/stream`, 8kHz/16kHz PCM), Gnani Timbre (TTS).
 - **LLM:** Google Gemini API (Flash-Lite / fast model) with tool calling.
 - **Email:** Resend / SMTP fallback.
 - **Audio pipeline:**
-  - Twilio 8kHz μ-law (PCMU) <-> 8kHz 16-bit linear PCM (Prisma STT).
-  - Timbre output -> 8kHz μ-law -> Twilio.
-  - Barge-in: Twilio `clear` event on user interruption.
+  - Telephony 8kHz μ-law (PCMU) <-> 8kHz 16-bit linear PCM (Prisma STT).
+  - Timbre output -> 8kHz μ-law -> Telephony.
+  - Barge-in: `clear` event on user interruption.
 
 ---
 
@@ -202,7 +200,7 @@ Everything listed under non-goals.
 - **campaigns:** `id`, `name`, `product_id`, `goal`, `max_concurrent`, `window_start`, `window_end`, `retry_limit`, `status`, `created_at`
 - **products:** `id`, `name`, `description`, `price`, `url`, `details` (JSON)
 - **contacts:** `id`, `campaign_id`, `name`, `phone`, `email`, `language`, `status` (`new`, `dialing`, `done`, `dnc`), `attempts`, `last_attempt_at`
-- **calls:** `id`, `contact_id`, `campaign_id`, `twilio_sid`, `status`, `started_at`, `ended_at`, `duration_sec`, `outcome`, `summary`, `transcript` (JSON), `language_detected`
+- **calls:** `id`, `contact_id`, `campaign_id`, `call_sid`, `status`, `started_at`, `ended_at`, `duration_sec`, `outcome`, `summary`, `transcript` (JSON), `language_detected`
 - **orders:** `id`, `contact_id`, `call_id`, `product_id`, `quantity`, `status` (`awaiting_details`, `details_received`, `paid`, `cod`, `cancelled`), `form_token`, `form_expires_at`, `address`, `pincode`, `created_at`
 - **callbacks:** `id`, `contact_id`, `source_call_id`, `due_at`, `reason`, `status`, `created_at`
 - **messages:** `id`, `contact_id`, `channel` (`email`, `whatsapp`), `direction`, `body`, `status`, `created_at`
@@ -218,9 +216,7 @@ Everything listed under non-goals.
 - `GET /campaigns/{id}/stats` - Funnel and counters
 - `GET /calls, GET /calls/{id}` - List calls, fetch transcript and summary
 - `GET /orders, GET /callbacks` - Lists for dashboard
-- `POST /twilio/voice` - Returns TwiML to start Media Stream
-- `WS /twilio/media` - Bidirectional audio stream
-- `POST /twilio/status` - Call status callbacks
-- `POST /twilio/whatsapp` - Inbound WhatsApp messages
+- `POST /answer` - Returns TeXML to start Media Stream
+- `WS /stream` - Bidirectional audio stream
 - `GET /order-form/{token}` & `POST /order-form/{token}` - Public order details form
 

@@ -232,7 +232,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             id=call_id,
                             contact_id=contact.id,
                             campaign_id=campaign.id if campaign else (campaign_id or "default-camp"),
-                            twilio_sid=call_sid,
+                            call_sid=call_sid,
                             status="in-progress",
                             started_at=datetime.now(timezone.utc)
                         )

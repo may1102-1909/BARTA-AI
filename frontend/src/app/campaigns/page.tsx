@@ -224,7 +224,7 @@ export default function CampaignsPage() {
         window_end: "23:59",
       });
 
-      // 2. Start calling dispatcher with Twilio number
+      // 2. Start calling dispatcher
       await api.startCampaign(created.id);
 
       handleCloseModal();

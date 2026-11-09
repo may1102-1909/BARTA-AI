@@ -87,6 +87,6 @@ async def get_call_detail(call_id: str, db: AsyncSession = Depends(get_db)):
         "started_at_ist": started_at_ist,
         "summary": call.summary,
         "transcript": call.transcript or [],
-        "twilio_sid": call.twilio_sid
+        "call_sid": call.call_sid
     }
 

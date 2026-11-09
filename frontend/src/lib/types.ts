@@ -153,7 +153,6 @@ export interface OrderFormSubmission {
 
 export interface Health {
   status: string;
-  twilio_configured?: boolean;
   gnani_configured?: boolean;
   gemini_configured?: boolean;
   resend_configured?: boolean;

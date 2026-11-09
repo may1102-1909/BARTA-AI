@@ -7,7 +7,7 @@ from sqlalchemy import select, update, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Campaign, Contact, Call, Product
 from app.database import AsyncSessionLocal
-from app.services.twilio_service import TwilioService
+from app.services.telephony_service import TelephonyService
 
 logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
@@ -19,7 +19,7 @@ class CampaignDispatcher:
     """
 
     def __init__(self):
-        self.twilio_service = TwilioService()
+        self.telephony_service = TelephonyService()
         self._active_campaign_tasks: Dict[str, asyncio.Task] = {}
         self._active_call_slots: Dict[str, Set[str]] = {} # campaign_id -> set of active call_ids
         self._stopped_campaigns: Set[str] = set()
@@ -147,20 +147,20 @@ class CampaignDispatcher:
                     # Reserve slot
                     self._active_call_slots[campaign_id].add(call.id)
 
-                    # Trigger Twilio outbound call
-                    sid = await self.twilio_service.place_call(
+                    # Trigger outbound call
+                    sid = await self.telephony_service.place_call(
                         to_phone=contact.phone,
                         call_id=call.id,
                         contact_id=contact.id,
                         campaign_id=campaign_id
                     )
                     if sid:
-                        call.twilio_sid = sid
+                        call.call_sid = sid
                         call.status = "in-progress"
                         await session.commit()
                     else:
                         call.status = "failed"
-                        call.outcome = "twilio_dial_failed"
+                        call.outcome = "dial_failed"
                         call.ended_at = datetime.now(timezone.utc)
                         contact.status = "failed"
                         self._active_call_slots[campaign_id].discard(call.id)

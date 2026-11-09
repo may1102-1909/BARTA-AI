@@ -77,7 +77,7 @@ class Call(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     contact_id = Column(String(36), ForeignKey("contacts.id"), nullable=False)
     campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False)
-    twilio_sid = Column(String(100), nullable=True)
+    call_sid = Column(String(100), nullable=True)
     status = Column(String(50), default="queued") # queued, in-progress, completed, failed, busy, no-answer
     started_at = Column(DateTime(timezone=True), nullable=True)
     ended_at = Column(DateTime(timezone=True), nullable=True)

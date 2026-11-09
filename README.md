@@ -32,7 +32,7 @@ Small and mid-size Indian businesses lose high-intent sales because follow-up ca
 | **STT (Speech-to-Text)** | **Gnani Prisma (v2.5 / v3)** | Real-time streaming transcription over WebSocket (`wss://api.vachana.ai/stt/v3/stream`). Processes 8 kHz 16-bit linear PCM audio. Supports Indian code-mixed speech (Hindi, English, Hinglish). |
 | **TTS (Text-to-Speech)** | **Gnani Timbre (v2.0)** | Natural neural Indian voice synthesis. Output converted from 16-bit linear PCM to 8 kHz μ-law for telephony delivery. |
 | **LLM Reasoning** | **Google Gemini 2.5 Flash** | Conversational dialogue turns, strict product guardrails (never invents prices or sizes), and tool calling. |
-| **Telephony** | **Twilio Programmable Voice** | Bidirectional Media Streams WebSocket (`/twilio/media`) over 8 kHz μ-law audio. Barge-in interruption support via Twilio `clear` event. |
+| **Telephony** | **Telnyx / Media Streams** | Bidirectional Media Streams WebSocket (`/stream`) over 8 kHz μ-law audio. Barge-in interruption support via `clear` event. |
 | **Order Details & Email** | **Resend / SMTP Fallback** | Dispatches single-use delivery details links with 72-hour cryptographic tokens. |
 | **Backend & Concurrency** | **FastAPI (Python 3.11)** | Non-blocking asynchronous queue, atomic contact locking, IST window checker, and background scheduler. |
 | **Frontend Dashboard** | **Next.js 14 (App Router) + Tailwind** | Apple-inspired minimal UI with live counters, conversion funnel, transcript drawer, and interactive browser simulator. |
@@ -43,13 +43,13 @@ Small and mid-size Indian businesses lose high-intent sales because follow-up ca
 
 ```mermaid
 flowchart LR
-    Caller["Customer Phone"] <-->|8kHz μ-law| Twilio["Twilio Media Stream"]
-    Twilio <-->|WebSocket| Converter["Audio Converter (mulaw <-> pcm16)"]
+    Caller["Customer Phone"] <-->|8kHz μ-law| Stream["Media Stream WebSocket"]
+    Stream <-->|WebSocket| Converter["Audio Converter (mulaw <-> pcm16)"]
     Converter -->|8kHz 16-bit PCM| Prisma["Gnani Prisma STT"]
     Prisma -->|Final Transcript| Gemini["Gemini 2.5 LLM + Tools"]
     Gemini -->|Spoken Text| Timbre["Gnani Timbre TTS"]
     Timbre -->|Linear PCM| Converter
-    Converter -->|8kHz μ-law frames| Twilio
+    Converter -->|8kHz μ-law frames| Stream
     Gemini -->|confirm_order| DB["Supabase / SQLite"]
     DB -->|Order Email| Customer["Customer Form Link"]
 ```
@@ -67,7 +67,7 @@ BARTA AI 2/
 │   │   ├── models.py              # PostgreSQL/SQLite models
 │   │   ├── main.py                # FastAPI entry point & lifespan
 │   │   ├── services/
-│   │   │   ├── audio_converter.py # Twilio 8kHz μ-law <-> 16-bit PCM codec
+│   │   │   ├── audio_converter.py # 8kHz μ-law <-> 16-bit PCM codec
 │   │   │   ├── gnani_stt.py       # Gnani Prisma WebSocket streaming STT
 │   │   │   ├── gnani_tts.py       # Gnani Timbre neural voice TTS
 │   │   │   ├── llm_agent.py       # Gemini prompt & tool orchestrator
@@ -75,14 +75,14 @@ BARTA AI 2/
 │   │   │   ├── scheduler.py       # 60s background IST callback worker
 │   │   │   ├── order_service.py   # 72h single-use token order manager
 │   │   │   ├── email_service.py   # Resend & SMTP HTML email dispatcher
-│   │   │   └── twilio_service.py  # Twilio outbound dialer & TwiML generator
+│   │   │   └── telephony_service.py # Telephony outbound dialer & call manager
 │   │   └── routers/
 │   │       ├── campaigns.py       # Campaign CRUD, stats, CSV import
 │   │       ├── calls.py           # Call logs & transcript drawer
 │   │       ├── orders.py          # Orders pipeline
 │   │       ├── callbacks.py       # Callbacks list, reschedule, cancel
 │   │       ├── public_forms.py    # Public customer order fulfillment form
-│   │       ├── twilio_media.py    # /twilio/voice webhook & WS /twilio/media
+│   │       ├── stream_media.py    # /answer TeXML & WS /stream
 │   │       └── simulator.py       # Browser-based live voice simulator
 │   ├── data/
 │   │   └── sample_contacts.csv    # Demo contacts for import
@@ -118,16 +118,13 @@ BARTA AI 2/
    # Virtual environment is already prepared in backend/venv
    .\venv\Scripts\activate
    ```
-2. Configure credentials in `backend/.env` (Twilio, Gnani AI, Gemini, Resend):
+2. Configure credentials in `backend/.env` (Gnani AI, Gemini, Resend):
    ```env
    GNANI_API_KEY=your_gnani_key
    GNANI_STT_WS_URL=wss://api.vachana.ai/stt/v3/stream
-   GNANI_TTS_API_URL=https://api.vachana.ai/tts/v2/synthesize
+   GNANI_TTS_API_URL=https://api.vachana.ai/api/v1/tts/inference
    GEMINI_API_KEY=your_gemini_key
-   TWILIO_ACCOUNT_SID=your_twilio_sid
-   TWILIO_AUTH_TOKEN=your_twilio_token
-   TWILIO_PHONE_NUMBER=+1...
-   TWILIO_WEBHOOK_URL=https://your-tunnel.ngrok-free.app
+   PUBLIC_URL=https://your-tunnel.ngrok-free.app
    ```
    *(Note: If API keys are not supplied, BARTA automatically runs in rich simulation mode so you can evaluate the complete pipeline without credit exhaustion).*
 
@@ -150,7 +147,7 @@ BARTA AI 2/
 
 ## 6. How to Test the Demo (Evaluator Guide)
 
-### Option A: Using the Built-In Voice Simulator (Instant, No Twilio Setup Needed)
+### Option A: Using the Built-In Voice Simulator (Instant, No Telephony Setup Needed)
 1. Navigate to **Voice Simulator** (`http://localhost:3000/simulator`) on the dashboard.
 2. Click **Start Simulated Voice Call**.
 3. BARTA will greet you:
@@ -170,14 +167,13 @@ backend\venv\Scripts\python backend\test_e2e.py
 ```
 Outputs `🏆 ALL 12 END-TO-END PIPELINE CHECKS PASSED! 🏆`.
 
-### Option C: Live Phone Call via Twilio
+### Option C: Live Phone Call via Telephony Media Stream
 1. Start an ngrok tunnel pointing to port 8000:
    ```bash
    ngrok http 8000
    ```
-2. Put the ngrok URL into `TWILIO_WEBHOOK_URL` in `backend/.env`.
-3. Go to **Campaigns**, click **Import CSV**, upload `backend/data/sample_contacts.csv`, and press **Start Calling**.
-4. Twilio will dial your phone, stream audio to `/twilio/media`, transcribe via **Gnani Prisma**, converse via **Gemini**, and speak via **Gnani Timbre**!
+2. Point your telephony answer webhook to `https://your-tunnel.ngrok-free.app/answer`.
+3. When the call connects, the telephony carrier streams audio to `/stream`, transcribing via **Gnani Prisma**, conversing via **Gemini**, and speaking via **Gnani Timbre**!
 
 ---
 
