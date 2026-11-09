@@ -88,20 +88,12 @@ class GnaniTimbreTTS:
 
     def _extract_pcm_from_wav(self, wav_bytes: bytes) -> bytes:
         """Extracts linear PCM data from WAV format and ensures 8kHz 16-bit mono."""
-        try:
-            with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
-                sample_rate = wf.getframerate()
-                sampwidth = wf.getsampwidth()
-                channels = wf.getnchannels()
-                frames = wf.readframes(wf.getnframes())
-
-                # If needed, resample to 8000 Hz
-                if sample_rate != 8000:
-                    frames = AudioConverter.resample_pcm(frames, sample_rate, 8000, sampwidth, channels)
-                return frames
-        except Exception as e:
-            logger.warning(f"Could not parse WAV header, attempting direct slice: {e}")
-            return wav_bytes[44:] if len(wav_bytes) > 44 else wav_bytes
+        if not wav_bytes:
+            return b""
+        data_pos = wav_bytes.find(b"data")
+        if data_pos != -1 and len(wav_bytes) >= data_pos + 8:
+            return wav_bytes[data_pos + 8:]
+        return wav_bytes[44:] if len(wav_bytes) > 44 else wav_bytes
 
     def _generate_fallback_audio(self, text: str, duration_sec: Optional[float] = None) -> bytes:
         """
