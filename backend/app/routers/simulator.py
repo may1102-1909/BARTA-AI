@@ -1,7 +1,10 @@
+import io
+import csv
 import uuid
+import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +15,7 @@ from app.services.order_service import OrderService
 from app.services.gnani_tts import GnaniTimbreTTS
 
 router = APIRouter(prefix="/simulator", tags=["Simulator"])
+logger = logging.getLogger(__name__)
 tts_service = GnaniTimbreTTS()
 
 class StartSimulationRequest(BaseModel):
@@ -126,6 +130,13 @@ async def start_simulated_call(
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
 
+    # Synthesize opening line using Gnani Timbre TTS (Voice: Shubham)
+    audio_base64 = None
+    try:
+        audio_base64 = await tts_service.synthesize_wav_base64(greeting, voice="Shubham")
+    except Exception as e:
+        logger.error(f"Failed to synthesize opening audio for simulator: {e}")
+
     active_sim_sessions[session_id] = {
         "agent": agent,
         "call_id": call.id,
@@ -137,6 +148,9 @@ async def start_simulated_call(
         "session_id": session_id,
         "call_id": call.id,
         "greeting": greeting,
+        "audio_base64": audio_base64,
+        "audio_format": "audio/wav",
+        "voice": "Shubham",
         "transcript": agent.history
     }
 
@@ -153,6 +167,15 @@ async def simulated_turn(
     call_id = session_data["call_id"]
 
     response = await agent.generate_response(payload.user_transcript)
+    reply_text = response.get("text", "")
+
+    # Synthesize agent reply using Gnani Timbre TTS (Voice: Shubham)
+    audio_base64 = None
+    if reply_text:
+        try:
+            audio_base64 = await tts_service.synthesize_wav_base64(reply_text, voice="Shubham")
+        except Exception as e:
+            logger.error(f"Failed to synthesize reply audio for simulator turn: {e}")
 
     # Check if call concluded
     if response.get("call_ended"):
@@ -172,10 +195,55 @@ async def simulated_turn(
         active_sim_sessions.pop(payload.session_id, None)
 
     return {
-        "agent_reply": response["text"],
+        "agent_reply": reply_text,
+        "audio_base64": audio_base64,
+        "audio_format": "audio/wav",
+        "voice": "Shubham",
         "tool_called": response.get("tool_called"),
         "outcome": response.get("outcome"),
         "call_ended": response.get("call_ended", False),
         "transcript": agent.history
+    }
+
+@router.post("/parse-csv")
+async def parse_contacts_csv(file: UploadFile = File(...)):
+    """
+    Parses an uploaded CSV file of contacts for the Call Simulator.
+    Extracts name, phone, email, language, and notes.
+    """
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported.")
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    contacts = []
+    for row in reader:
+        norm = {k.strip().lower(): (v.strip() if v else "") for k, v in row.items() if k}
+        name = norm.get("name") or norm.get("contact_name") or norm.get("full_name") or norm.get("customer") or "Unknown"
+        phone = norm.get("phone") or norm.get("contact_phone") or norm.get("mobile") or norm.get("number") or ""
+        email = norm.get("email") or norm.get("contact_email") or ""
+        language = norm.get("language") or norm.get("lang") or "hinglish"
+        notes = norm.get("notes") or norm.get("context") or ""
+
+        if phone or name != "Unknown":
+            contacts.append({
+                "contact_name": name,
+                "contact_phone": phone,
+                "contact_email": email,
+                "preferred_language": language,
+                "notes": notes
+            })
+
+    if not contacts:
+        raise HTTPException(status_code=400, detail="No valid contact rows found in CSV.")
+
+    return {
+        "contacts": contacts,
+        "count": len(contacts)
     }
 

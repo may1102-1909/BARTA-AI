@@ -1,6 +1,7 @@
 import io
 import math
 import wave
+import base64
 import logging
 import httpx
 from typing import Optional
@@ -69,6 +70,21 @@ class GnaniTimbreTTS:
 
         # Local development / simulation fallback: generate synthetic natural tone / silence frames
         return self._generate_fallback_audio(text)
+
+    async def synthesize_wav_base64(self, text: str, voice: Optional[str] = "Shubham") -> str:
+        """
+        Synthesizes text into a standard WAV audio format and encodes it as Base64
+        for instant browser playback in the simulator.
+        """
+        ulaw_bytes = await self.synthesize(text, voice=voice or "Shubham")
+        pcm_bytes = AudioConverter.ulaw_to_pcm16(ulaw_bytes)
+        out = io.BytesIO()
+        with wave.open(out, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(8000)
+            wf.writeframes(pcm_bytes)
+        return base64.b64encode(out.getvalue()).decode("ascii")
 
     def _extract_pcm_from_wav(self, wav_bytes: bytes) -> bytes:
         """Extracts linear PCM data from WAV format and ensures 8kHz 16-bit mono."""

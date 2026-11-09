@@ -163,19 +163,36 @@ export interface SimulationStartInput {
   contact_phone: string;
   contact_email?: string;
   preferred_language: string;
+  notes?: string;
 }
 
 export interface SimulationStart {
   session_id: string;
   call_id: string;
+  greeting?: string;
+  audio_base64?: string | null;
+  audio_format?: string;
+  voice?: string;
   transcript?: TranscriptTurn[];
 }
 
 export interface SimulationTurn {
+  agent_reply?: string;
+  audio_base64?: string | null;
+  audio_format?: string;
+  voice?: string;
   transcript?: TranscriptTurn[];
   tool_called?: string | null;
   outcome?: string | null;
   call_ended?: boolean;
+}
+
+export interface ParsedCsvContact {
+  contact_name: string;
+  contact_phone: string;
+  contact_email?: string;
+  preferred_language: string;
+  notes?: string;
 }
 
 export interface ImportResult {

@@ -16,6 +16,7 @@ import type {
   SimulationStart,
   SimulationStartInput,
   SimulationTurn,
+  ParsedCsvContact,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -114,6 +115,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ session_id: sessionId, user_transcript: transcript }),
     }),
+
+  parseSimulatorCsv: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/simulator/parse-csv`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to parse CSV file");
+    }
+    return res.json() as Promise<{ contacts: ParsedCsvContact[]; count: number }>;
+  },
 
   getHealth: () => fetchApi<Health>("/health"),
 };

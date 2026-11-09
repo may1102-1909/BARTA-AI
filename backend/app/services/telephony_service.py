@@ -27,3 +27,4 @@ class TelephonyService:
         """Sends WhatsApp message or logs as queued."""
         logger.info(f"[WHATSAPP] Dispatching message to {to_phone}: {body[:40]}...")
         return True
+
