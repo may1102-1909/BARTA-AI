@@ -9,3 +9,4 @@ export const SUPABASE_ANON_KEY =
   "sb_publishable_cQF5YTi7ad2dnQ3N6w__pA_1psKz9hX";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+

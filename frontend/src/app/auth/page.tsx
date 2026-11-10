@@ -17,14 +17,14 @@ export default function AuthPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // If already logged in, offer quick redirect
+  // If already logged in, navigate straight to /dashboard
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        // user already authenticated
+        router.push("/dashboard");
       }
     });
-  }, []);
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,48 +32,82 @@ export default function AuthPage() {
     setSuccessMsg(null);
     setLoading(true);
 
+    const cleanEmail = email.trim().toLowerCase();
+
     try {
-      if (mode === "signin") {
-        const { data, error: err } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
+      if (mode === "signup") {
+        // 1. CREATE ACCOUNT WITH AUTO-CONFIRM
+        const regRes = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: cleanEmail,
+            password,
+            fullName,
+          }),
         });
 
-        if (err) throw err;
-
-        if (data.user) {
-          setSuccessMsg("Signed in successfully! Redirecting to BARTA workspace...");
-          setTimeout(() => {
-            router.push("/dashboard");
-          }, 600);
+        const regData = await regRes.json();
+        if (!regRes.ok || regData.error) {
+          throw new Error(regData.error || "Failed to register account.");
         }
-      } else {
-        const { data, error: err } = await supabase.auth.signUp({
-          email: email.trim(),
+
+        // 2. DIRECT AUTO-SIGNIN: Immediately establish session so user NEVER needs to sign in again!
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
           password,
-          options: {
-            data: {
-              full_name: fullName.trim(),
-            },
-          },
         });
 
-        if (err) throw err;
+        if (signInErr) {
+          throw signInErr;
+        }
 
-        if (data.session) {
-          setSuccessMsg("Account created! Redirecting to BARTA workspace...");
+        setSuccessMsg("Account created successfully! Directing you to your dashboard...");
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 500);
+      } else {
+        // SIGN IN
+        let { data, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+
+        // If email was unconfirmed from a previous attempt, auto-confirm it in the background and retry!
+        if (signInErr && signInErr.message.toLowerCase().includes("email not confirmed")) {
+          try {
+            await fetch("/api/auth/confirm-user", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: cleanEmail }),
+            });
+
+            // Retry sign-in
+            const retry = await supabase.auth.signInWithPassword({
+              email: cleanEmail,
+              password,
+            });
+            data = retry.data;
+            signInErr = retry.error;
+          } catch {
+            // fall back to reporting error
+          }
+        }
+
+        if (signInErr) {
+          throw signInErr;
+        }
+
+        if (data?.user) {
+          setSuccessMsg("Signed in successfully! Opening your dashboard...");
           setTimeout(() => {
             router.push("/dashboard");
-          }, 800);
-        } else {
-          setSuccessMsg(
-            "Account registered! You can now sign in with your email and password."
-          );
-          setMode("signin");
+          }, 400);
         }
       }
     } catch (err: any) {
-      setError(err?.message || "An error occurred during authentication.");
+      console.error("Auth error:", err);
+      setError(err?.message || "Authentication failed. Please check your credentials.");
     } finally {
       setLoading(false);
     }
@@ -117,10 +151,10 @@ export default function AuthPage() {
             <h1 className="text-2xl font-bold tracking-tight text-[#0B1D3A]">
               {mode === "signin" ? "Sign in to Barta AI" : "Create your Barta account"}
             </h1>
-            <p className="text-xs text-[#637086] mt-1.5 max-w-[280px] mx-auto">
+            <p className="text-xs text-[#637086] mt-1.5 max-w-[300px] mx-auto">
               {mode === "signin"
                 ? "Enter your credentials to access your voice sales agent workspace"
-                : "Set up your account to start automating voice sales calls"}
+                : "Enter your details to create an account and go directly to your dashboard"}
             </p>
           </div>
 
@@ -162,7 +196,7 @@ export default function AuthPage() {
           {error && (
             <div className="mb-5 rounded-[12px] bg-rose-50 border border-rose-200 p-3 flex items-start gap-2.5 text-xs text-rose-800">
               <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-              <div className="leading-relaxed">{error}</div>
+              <div className="leading-relaxed font-medium">{error}</div>
             </div>
           )}
 
@@ -209,7 +243,7 @@ export default function AuthPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
+                  placeholder="may.911.505@gmail.com"
                   className="w-full rounded-[10px] border border-[#DFE5EE] bg-white py-2.5 pl-9 pr-3 text-xs text-[#0B1D3A] placeholder-[#637086]/60 focus:border-[#0B1D3A] focus:outline-none focus:ring-1 focus:ring-[#0B1D3A] transition"
                 />
               </div>
@@ -254,11 +288,11 @@ export default function AuthPage() {
                 {loading ? (
                   <span className="inline-flex items-center gap-2">
                     <span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    Processing...
+                    {mode === "signup" ? "Creating account & entering dashboard..." : "Signing in..."}
                   </span>
                 ) : (
                   <>
-                    <span>{mode === "signin" ? "Sign In to Barta" : "Create Account"}</span>
+                    <span>{mode === "signin" ? "Sign In to Barta" : "Create Account & Go to Dashboard"}</span>
                     <ArrowRight className="h-3.5 w-3.5" />
                   </>
                 )}
