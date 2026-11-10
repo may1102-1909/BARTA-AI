@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import DeveloperNotes from "@/components/DeveloperNotes";
 import {
   AudioLines,
   ArrowRight,
@@ -75,6 +76,12 @@ export default function LandingPage() {
               className="transition-colors hover:text-[#0B1D3A]"
             >
               How it works
+            </a>
+            <a
+              href="#developer-notes"
+              className="transition-colors hover:text-[#0B1D3A]"
+            >
+              Developer Notes
             </a>
             <a
               href="https://github.com/may1102-1909/BARTA-AI"
@@ -368,7 +375,10 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 7. FOOTER */}
+      {/* 7. DEVELOPER NOTES */}
+      <DeveloperNotes />
+
+      {/* 8. FOOTER */}
       <footer className="w-full border-t border-[#DFE5EE] bg-white py-[36px]">
         <div className="mx-auto flex max-w-[1080px] flex-col sm:flex-row items-center justify-between gap-4 px-6 sm:px-[60px] text-[13px] text-[#637086]">
           {/* Brand */}
