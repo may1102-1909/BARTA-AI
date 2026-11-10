@@ -223,7 +223,7 @@ export default function AuthPage() {
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Tanmay Sharma"
+                    placeholder="Your Name"
                     className="w-full rounded-[10px] border border-[#DFE5EE] bg-white py-2.5 pl-9 pr-3 text-xs text-[#0B1D3A] placeholder-[#637086]/60 focus:border-[#0B1D3A] focus:outline-none focus:ring-1 focus:ring-[#0B1D3A] transition"
                   />
                 </div>
@@ -243,7 +243,7 @@ export default function AuthPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="may.911.505@gmail.com"
+                  placeholder="name@company.com"
                   className="w-full rounded-[10px] border border-[#DFE5EE] bg-white py-2.5 pl-9 pr-3 text-xs text-[#0B1D3A] placeholder-[#637086]/60 focus:border-[#0B1D3A] focus:outline-none focus:ring-1 focus:ring-[#0B1D3A] transition"
                 />
               </div>
