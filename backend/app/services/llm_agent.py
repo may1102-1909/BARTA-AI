@@ -4,99 +4,25 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Callable, Awaitable
 import pytz
+
 try:
     from google import genai
     from google.genai import types
 except ImportError:
     genai = None
     types = None
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
 IST = pytz.timezone("Asia/Kolkata")
-
-# Tool declarations for Gemini
-AGENT_TOOLS = [
-    {
-        "name": "send_whatsapp_catalog",
-        "description": "Sends the CURATED India product drop catalog and link to the customer on WhatsApp.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "phone": {"type": "string", "description": "Phone number to send WhatsApp catalog to."},
-                "message_type": {"type": "string", "description": "Type of message, e.g., catalog, product_info."}
-            },
-            "required": ["phone"]
-        }
-    },
-    {
-        "name": "schedule_callback",
-        "description": "Call this when the customer asks to be called back at a specific time (e.g. '2 hours', 'tomorrow', 'evening').",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "due_at_iso": {"type": "string", "description": "Target callback datetime in ISO 8601 format with IST timezone (+05:30) or UTC (Z)."},
-                "reason": {"type": "string", "description": "Brief reason for callback, e.g. 'Customer is busy, call in 2 hours'."}
-            },
-            "required": ["due_at_iso", "reason"]
-        }
-    },
-    {
-        "name": "confirm_order",
-        "description": "Call this when the customer explicitly agrees to place an order.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "product": {"type": "string", "description": "The name or ID of the product being ordered."},
-                "quantity": {"type": "integer", "description": "The quantity ordered (usually 1 or more)."},
-                "email": {"type": "string", "description": "The customer's email address to send the secure delivery details form."}
-            },
-            "required": ["product", "quantity", "email"]
-        }
-    },
-    {
-        "name": "send_whatsapp",
-        "description": "Sends a product link, size guide, or payment link to the customer on WhatsApp.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "message_type": {"type": "string", "enum": ["product_info", "payment_link", "size_chart"], "description": "Type of WhatsApp message."}
-            },
-            "required": ["message_type"]
-        }
-    },
-    {
-        "name": "set_outcome",
-        "description": "Records the final qualified outcome of the call.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "outcome": {
-                    "type": "string",
-                    "enum": [
-                        "catalog_sent",
-                        "callback_requested",
-                        "order_confirmed",
-                        "interested",
-                        "not_interested",
-                        "no_answer",
-                        "wrong_number",
-                        "do_not_call"
-                    ],
-                    "description": "The definitive outcome category."
-                },
-                "notes": {"type": "string", "description": "Brief context or qualification notes."}
-            },
-            "required": ["outcome"]
-        }
-    }
-]
 
 class VoiceAgentLLM:
     """
-    Manages conversational intelligence for 'Shubham', outbound AI voice sales agent
-    for Curated India, calling customer Tanmay.
+    Intelligent conversational voice agent for 'Shubham', an outbound sales agent
+    for Curated India. Uses Gemini to analyze caller intent, reason deeply,
+    execute tools (orders, callbacks, whatsapp catalog), and produce natural,
+    concise Hinglish speech optimized for Gnani Timbre TTS.
     """
 
     def __init__(
@@ -106,32 +32,37 @@ class VoiceAgentLLM:
         contact_email: Optional[str] = None,
         preferred_language: str = "hinglish",
         product_info: Optional[Dict[str, Any]] = None,
-        campaign_goal: str = "Share new drop details and send WhatsApp catalog",
+        campaign_goal: str = "Introduce CURATED Minimalist Linen Kurta festival offer and book orders.",
         previous_call_context: Optional[str] = None,
         tool_handler: Optional[Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None
     ):
-        self.contact_name = contact_name or "Tanmay"
-        self.contact_phone = contact_phone or ""
-        self.contact_email = contact_email or ""
+        self.contact_name = (contact_name or "Tanmay").strip()
+        self.contact_phone = (contact_phone or "").strip()
+        self.contact_email = (contact_email or "").strip()
         self.preferred_language = preferred_language or "hinglish"
-        self.product_info = product_info or {
-            "name": "CURATED Minimalist Linen Kurta",
-            "price": 1899,
-            "discount_price": 1499
-        }
         self.campaign_goal = campaign_goal
-        self.previous_call_context = previous_call_context
+        self.previous_call_context = previous_call_context or ""
         self.tool_handler = tool_handler
+
+        self.product_info = product_info or {
+            "brand": "CURATED India",
+            "name": "CURATED Minimalist Linen Kurta",
+            "fabric": "100% Organic Handspun Linen",
+            "regular_price": 1899,
+            "offer_price": 1499,
+            "discount_offer": "Flat ₹400 OFF today (Offer Price: ₹1,499)",
+            "colors": ["Natural Ivory", "Sage Olive", "Charcoal Slate", "Earthy Ochre"],
+            "sizes": ["S", "M", "L", "XL", "XXL"],
+            "shipping": "Free express delivery across India (3-5 business days)",
+            "payment": "Cash on Delivery (COD) & Online UPI",
+            "returns": "7-day hassle-free exchange & returns"
+        }
 
         self.history: List[Dict[str, Any]] = []
         self.recorded_outcome: Optional[str] = None
         self.recorded_notes: Optional[str] = None
         self.call_ended: bool = False
-
-        # State Machine States:
-        # 'opening' -> 'busy_asked' or 'lang_check' -> 'pitch' -> 'closing' / 'closed'
         self.state: str = "opening"
-        self.chosen_language: str = "hinglish"
 
         self._init_gemini()
 
@@ -141,65 +72,81 @@ class VoiceAgentLLM:
             try:
                 self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
             except Exception as e:
-                logger.warning(f"Failed to initialize Gemini Client: {e}. Will use built-in state machine.")
-
-    def _build_system_prompt(self) -> str:
-        current_time_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-        return f"""You are "Shubham", an outbound AI voice sales agent for Curated India. Your voice is generated via Gnani AI Timbre TTS, and your responses must be natural, concise, and optimized for real-time speech (avoid long paragraphs, bullet points, or markdown). 
-
-Current local time: {current_time_ist}
-You are calling a customer named TANMAY ({self.contact_phone}). You must strictly follow this conversational state machine and flow:
-
-### CONVERSATIONAL FLOW & SCRIPT:
-
-1. Opening (Mandatory First Turn):
-   - You MUST start the call with exact Hinglish:
-   - "Hi, kya mai Tanmay se baat kar raha hoon?"
-   - Stop and wait for the user's response.
-
-2. Branch A: User is busy right now
-   - If the user says they are busy ("busy hoon", "abhi vyast hoon", "baad me call karna", "not a good time", etc.):
-   - Ask: "Koi baat nahi, kya mai aapko 2 ghante baad ya kal call karoon?"
-   - If they specify a time (e.g., "2 hours", "evening", "tomorrow"), acknowledge it warmly: "Theek hai, main aapko wahi samay par call karunga. Dhanyawad!" and trigger the callback scheduler tool.
-
-3. Branch B: User confirms identity / continues
-   - If the user confirms it's Tanmay (or says "haan", "boliye"):
-   - Proceed to language preference check:
-   - "Aap kis bhasha mein comfortable hain—Hindi, English, ya Hinglish?"
-   - Wait for their choice.
-
-4. Value Proposition (After Language Preference):
-   - Acknowledge their language choice smoothly, then deliver the pitch:
-   - "Main Shubham hoon Curated India se. Main aapko hamare store ke naye drop ke baare mein batane ke liye call kar raha hoon. Kya aap product ke details dekhna chahenge?"
-   - Wait for response.
-
-5. Closing / Action Trigger:
-   - If the user agrees or asks for photos/links (e.g., "haan WhatsApp pe bhej do", "send details"):
-   - Respond: "Bilkul! Maine aapke WhatsApp par catalog bhej diya hai, aap check kar sakte hain. Have a great day!"
-   - Trigger the WhatsApp catalog sender tool in the backend.
-   - If they say no, politely wrap up: "Koi baat nahi, thank you so much! Have a wonderful day."
-
-### RULES FOR VOICE:
-- Keep sentences short so the user doesn't get interrupted.
-- Use natural conversational Hinglish (blend of Hindi and English words written in Latin script).
-- Never output markdown formatting like bold text, asterisks, or quotes in your text stream—only output raw text for the TTS engine.
-"""
+                logger.warning(f"Failed to initialize Gemini Client: {e}. Fallback to rule engine.")
 
     def get_initial_greeting(self) -> str:
-        """Returns the initial opening line for the agent."""
+        """Returns the natural opening voice line personalized to the target contact."""
         self.state = "opening"
-        return "Hi, main BARTA-AI se baat kar raha hoon. Bataiye, kaise madad kar sakta hoon?"
+        first_name = self.contact_name.split()[0] if self.contact_name else "ji"
+        if first_name.lower() in ["unknown", "customer"]:
+            greeting = "Hi, main Shubham bol raha hoon CURATED India se. Hamare naye festive drop ke baare mein baat karni thi, kya do minute baat ho sakti hai?"
+        else:
+            greeting = f"Hi {first_name}, main Shubham bol raha hoon CURATED India se. Hamare naye organic linen drop ke baare mein baat karni thi, kya do minute baat ho sakti hai?"
+        return greeting
 
     def _clean_for_speech(self, text: str) -> str:
-        """Strips markdown asterisks, hashes, backticks, quotes for pure TTS speech."""
+        """Strips markdown asterisks, hashes, backticks, quotes for pure human-sounding TTS speech."""
         text = re.sub(r"[\*#_`~\"\[\]\(\)\{\}]", "", text)
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
+    def _build_system_prompt(self) -> str:
+        current_time_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+        return f"""You are "Shubham", a warm, polite, and persuasive Indian outbound voice sales agent for CURATED India.
+Your voice is synthesized by Gnani AI Timbre TTS into real human voice, so your spoken response MUST be natural, spoken conversational Hinglish (blend of Hindi and English written in Latin alphabet), 1 to 2 short sentences maximum, and strictly plain text (NO markdown, NO bullet points, NO asterisks, NO quotes).
+
+CALL CONTEXT:
+- Customer Name: {self.contact_name}
+- Customer Phone: {self.contact_phone}
+- Customer Email: {self.contact_email}
+- Language: {self.preferred_language}
+- Customer Notes/Context: {self.previous_call_context or 'Target customer interested in premium ethnic/casual wear'}
+- Campaign Goal: {self.campaign_goal}
+- Current IST Time: {current_time_ist}
+
+PRODUCT KNOWLEDGE (CURATED India):
+- Product: {self.product_info.get('name', 'CURATED Minimalist Linen Kurta')}
+- Fabric: {self.product_info.get('fabric', '100% Organic Handspun Linen')}
+- Colors: {', '.join(self.product_info.get('colors', ['Natural Ivory', 'Sage Olive', 'Charcoal Slate']))}
+- Sizes: {', '.join(self.product_info.get('sizes', ['S', 'M', 'L', 'XL', 'XXL']))}
+- Pricing: Regular ₹1,899 | Exclusive Festival Offer today: Flat ₹1,499 (Save ₹400)
+- Shipping: Free Express Shipping across India (3-5 days delivery)
+- Payment: Cash on Delivery (COD) available with no extra fees; UPI/Online also supported
+- Policy: 7-day hassle-free size exchange and returns
+
+AVAILABLE ACTIONS (TOOLS):
+1. confirm_order: Customer explicitly agrees to buy or order (e.g., 'order kardo', 'confirm my order', 'Ivory color L size chahiye').
+   Arguments: product (string), quantity (int), color (optional string), size (optional string), payment_method (string: 'COD' or 'online'), email (string)
+2. schedule_callback: Customer is busy, driving, in a meeting, or asks to call back later (e.g., 'call me in 2 hours', 'kal call karo', 'abhi busy hoon').
+   Arguments: due_at_iso (ISO 8601 string, e.g. target time in IST), reason (string)
+3. send_whatsapp_catalog: Customer asks to see pictures, catalog, size chart, or link on WhatsApp (e.g., 'WhatsApp pe bhej do', 'photos dikhao', 'link bhejo').
+   Arguments: phone (string), message_type (string: 'catalog' | 'size_chart' | 'discount_link')
+4. set_outcome: Definitive call outcome when call is concluded.
+   Arguments: outcome ('order_confirmed' | 'callback_requested' | 'catalog_sent' | 'interested' | 'not_interested' | 'wrong_number' | 'do_not_call'), notes (string)
+
+INSTRUCTIONS:
+1. Analyze the customer's input carefully: identify their intent, question, or hesitation.
+2. In the "thought" field, write your internal reasoning explaining what you understood, what details you are addressing (e.g. price, COD, sizing), and why you chose your response.
+3. In the "spoken_text" field, provide Shubham's exact spoken reply. Be friendly, authentic, and directly answer their question. Keep it to 1-2 spoken sentences so the dialogue flows smoothly without overwhelming the listener.
+4. If a tool should be triggered, specify "tool_name" and "tool_args". If no tool is needed right now, set "tool_name": null.
+5. Set "call_ended": true ONLY if the call is genuinely finished (e.g. callback scheduled, customer declined, or parting goodbye after order/catalog).
+
+You MUST output ONLY valid JSON matching this schema:
+{{
+  "thought": "Internal reasoning analyzing customer intent and response strategy",
+  "intent": "e.g. price_inquiry | payment_inquiry | busy | interested | place_order | callback_request | decline | identity_confirm",
+  "spoken_text": "Spoken line in natural Hinglish for Gnani TTS (no markdown)",
+  "tool_name": "confirm_order" | "schedule_callback" | "send_whatsapp_catalog" | "set_outcome" | null,
+  "tool_args": {{}},
+  "outcome": "order_confirmed" | "callback_requested" | "catalog_sent" | "interested" | "not_interested" | "wrong_number" | "do_not_call" | null,
+  "call_ended": boolean
+}}
+"""
+
     async def generate_response(self, user_transcript: str) -> Dict[str, Any]:
         """
         Processes caller speech and generates agent response + handles tool calls
-        following Shubham's state machine.
+        using Gemini reasoning with safe fallback.
         """
         self.history.append({
             "speaker": "user",
@@ -207,242 +154,180 @@ You are calling a customer named TANMAY ({self.contact_phone}). You must strictl
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
 
-        # Process through state machine first to determine if state or tool is triggered
-        fallback_res = await self._dialogue_engine(user_transcript)
+        result = None
 
-        # If Gemini is configured and dialogue is in an open conversation, Gemini can refine
-        # However, if we hit a scripted branch (busy, lang_check, pitch, closing), enforce exact script
-        if self.client and self.state not in ["busy_asked", "closed"]:
+        # 1. Attempt Gemini LLM Reasoning
+        if self.client:
             try:
                 system_instruction = self._build_system_prompt()
                 chat_context = "\n".join([f"{t['speaker'].upper()}: {t['text']}" for t in self.history])
                 prompt = (
                     f"{system_instruction}\n\n"
-                    f"CURRENT STATE: {self.state}\n"
-                    f"CONVERSATION HISTORY:\n{chat_context}\n\n"
-                    f"Produce ONLY the single plain text line (no markdown, no quotes, no asterisks) for Shubham's next spoken turn:"
+                    f"CONVERSATION HISTORY SO FAR:\n{chat_context}\n\n"
+                    f"LATEST CUSTOMER STATEMENT: \"{user_transcript}\"\n\n"
+                    f"Generate the JSON response:"
                 )
-                
-                resp = self.client.models.generate_content(
+
+                response = self.client.models.generate_content(
                     model=settings.GEMINI_MODEL,
                     contents=prompt
                 )
-                if resp.text and resp.text.strip():
-                    cleaned_gemini = self._clean_for_speech(resp.text)
-                    # If fallback has specific tool, preserve it
-                    fallback_res["text"] = cleaned_gemini
-            except Exception as e:
-                logger.warning(f"Gemini generation error: {e}. Using state machine response.")
 
+                raw_text = response.text.strip() if response.text else ""
+                # Strip markdown code blocks if wrapped
+                raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.MULTILINE)
+                raw_text = re.sub(r"```\s*$", "", raw_text, flags=re.MULTILINE).strip()
+
+                parsed = json.loads(raw_text)
+                spoken = self._clean_for_speech(parsed.get("spoken_text", ""))
+                thought = parsed.get("thought", "Analyzing customer statement and responding to inquiry.")
+                intent = parsed.get("intent", "conversation")
+                tool_name = parsed.get("tool_name")
+                tool_args = parsed.get("tool_args", {})
+                outcome = parsed.get("outcome")
+                call_ended = bool(parsed.get("call_ended", False))
+
+                if spoken:
+                    result = {
+                        "text": spoken,
+                        "thought": thought,
+                        "intent": intent,
+                        "tool_called": tool_name,
+                        "tool_args": tool_args,
+                        "outcome": outcome,
+                        "call_ended": call_ended
+                    }
+            except Exception as e:
+                logger.warning(f"Gemini generation error: {e}. Executing fallback dialogue engine.")
+
+        # 2. Fallback if Gemini failed or offline
+        if not result:
+            result = await self._fallback_dialogue_engine(user_transcript)
+
+        # 3. Execute Tool if specified
+        tool_name = result.get("tool_called")
+        tool_args = result.get("tool_args", {})
+        if tool_name and self.tool_handler:
+            try:
+                await self.tool_handler(tool_name, tool_args)
+            except Exception as e:
+                logger.error(f"Failed to execute tool {tool_name}: {e}")
+
+        if result.get("outcome"):
+            self.recorded_outcome = result["outcome"]
+        if result.get("call_ended"):
+            self.call_ended = True
+
+        # Append to conversation history with thought and intent
         self.history.append({
             "speaker": "agent",
-            "text": fallback_res["text"],
+            "text": result["text"],
+            "thought": result.get("thought"),
+            "intent": result.get("intent"),
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
 
-        return fallback_res
+        return result
 
-    async def _dialogue_engine(self, user_text: str) -> Dict[str, Any]:
-        """Strict conversational state machine adhering to the user's specification."""
+    async def _fallback_dialogue_engine(self, user_text: str) -> Dict[str, Any]:
+        """Contextual fallback dialogue engine when LLM API is unavailable."""
         lower = user_text.lower().strip()
         now_ist = datetime.now(IST)
+        first_name = self.contact_name.split()[0] if self.contact_name else "ji"
 
-        logger.info(f"Agent state before turn: '{self.state}', user input: '{user_text}'")
-
-        # Global DNC Check
+        # DNC
         if any(w in lower for w in ["do not call", "dnc", "stop calling", "kabhi call mat karna"]):
-            self.state = "closed"
-            self.call_ended = True
-            self.recorded_outcome = "do_not_call"
-            if self.tool_handler:
-                await self.tool_handler("set_outcome", {"outcome": "do_not_call", "notes": "Requested DNC"})
             return {
                 "text": "Bilkul samajh gaya. Maine aapka number Do Not Call list me add kar diya hai. Aage se koi call nahi aayegi. Shukriya.",
+                "thought": "Customer explicitly requested Do Not Call. Honoring preference immediately.",
+                "intent": "do_not_call",
                 "tool_called": "set_outcome",
+                "tool_args": {"outcome": "do_not_call", "notes": "Requested DNC"},
                 "outcome": "do_not_call",
                 "call_ended": True
             }
 
-        # -------------------------------------------------------------
-        # 1. Opening State: Agent asked "Hi, kya mai Tanmay se baat kar raha hoon?"
-        # -------------------------------------------------------------
-        if self.state == "opening":
-            # Branch A: Caller says they are busy
-            is_busy = any(w in lower for w in [
-                "busy", "vyast", "baad me", "later", "not a good time", "not now",
-                "driving", "drive", "meeting", "abhi nahi", "kaam", "ruk", "thodi der",
-                "call back", "call later", "baad me karo", "abhi busy"
-            ])
-            if is_busy:
-                self.state = "busy_asked"
-                return {
-                    "text": "Koi baat nahi, kya mai aapko 2 ghante baad ya kal call karoon?",
-                    "tool_called": None,
-                    "outcome": "callback_pending",
-                    "call_ended": False
-                }
-
-            # Wrong number check
-            if any(w in lower for w in ["wrong number", "galat number", "tanmay nahi", "not tanmay", "galat hai"]):
-                self.state = "closed"
-                self.call_ended = True
-                self.recorded_outcome = "wrong_number"
-                if self.tool_handler:
-                    await self.tool_handler("set_outcome", {"outcome": "wrong_number", "notes": "Wrong contact"})
-                return {
-                    "text": "Maaf kijiyega, lagta hai galat number lag gaya. Have a great day!",
-                    "tool_called": "set_outcome",
-                    "outcome": "wrong_number",
-                    "call_ended": True
-                }
-
-            # Branch B: Caller confirms identity / continues
-            self.state = "lang_check"
+        # Busy / Callback
+        if any(w in lower for w in ["busy", "vyast", "baad me", "later", "driving", "meeting", "abhi nahi", "kal call"]):
+            due_at = (now_ist + timedelta(hours=2)).isoformat()
             return {
-                "text": "Aap kis bhasha mein comfortable hain—Hindi, English, ya Hinglish?",
-                "tool_called": None,
-                "outcome": "identity_confirmed",
-                "call_ended": False
-            }
-
-        # -------------------------------------------------------------
-        # 2. Branch A Follow-up: Agent asked "Koi baat nahi, kya mai aapko 2 ghante baad ya kal call karoon?"
-        # -------------------------------------------------------------
-        if self.state == "busy_asked":
-            # Parse requested callback time
-            due_at = now_ist + timedelta(hours=2)
-            reason = "Customer requested callback in 2 hours"
-
-            if any(w in lower for w in ["kal", "tomorrow"]):
-                due_at = (now_ist + timedelta(days=1)).replace(hour=11, minute=0, second=0, microsecond=0)
-                reason = "Customer requested callback tomorrow"
-            elif any(w in lower for w in ["shaam", "evening"]):
-                due_at = now_ist.replace(hour=18, minute=0, second=0, microsecond=0)
-                reason = "Customer requested callback in evening"
-            elif any(w in lower for w in ["2", "two", "do ghante", "2 hours", "2 ghante"]):
-                due_at = now_ist + timedelta(hours=2)
-                reason = "Customer requested callback in 2 hours"
-
-            self.state = "closed"
-            self.call_ended = True
-            self.recorded_outcome = "callback_requested"
-
-            if self.tool_handler:
-                await self.tool_handler("schedule_callback", {
-                    "due_at_iso": due_at.isoformat(),
-                    "reason": reason
-                })
-
-            return {
-                "text": "Theek hai, main aapko wahi samay par call karunga. Dhanyawad!",
+                "text": f"Koi baat nahi {first_name}, main aapko 2 ghante baad call karta hoon. Thank you!",
+                "thought": "Customer mentioned they are busy. Scheduling a callback without pushing.",
+                "intent": "busy",
                 "tool_called": "schedule_callback",
+                "tool_args": {"due_at_iso": due_at, "reason": "Customer busy, callback requested"},
                 "outcome": "callback_requested",
                 "call_ended": True
             }
 
-        # -------------------------------------------------------------
-        # 3. Branch B: Language Preference Check
-        # -------------------------------------------------------------
-        if self.state == "lang_check":
-            if "english" in lower:
-                self.chosen_language = "english"
-            elif "hindi" in lower:
-                self.chosen_language = "hindi"
-            else:
-                self.chosen_language = "hinglish"
-
-            self.state = "pitch"
-            # Deliver pitch
+        # Order Confirmation
+        if any(w in lower for w in ["confirm", "order", "book", "kharidna", "bhejo ek", "cod pe kardo"]):
             return {
-                "text": "Main Shubham hoon Curated India se. Main aapko hamare store ke naye drop ke baare mein batane ke liye call kar raha hoon. Kya aap product ke details dekhna chahenge?",
+                "text": f"Bahut badhiya {first_name}! Maine aapka order Cash on Delivery pe confirm kar diya hai. Delivery details aapke email aur SMS pe bhej di hain.",
+                "thought": "Customer confirmed order placement. Triggering confirm_order tool.",
+                "intent": "place_order",
+                "tool_called": "confirm_order",
+                "tool_args": {
+                    "product": self.product_info.get("name", "CURATED Linen Kurta"),
+                    "quantity": 1,
+                    "email": self.contact_email or "customer@example.com"
+                },
+                "outcome": "order_confirmed",
+                "call_ended": True
+            }
+
+        # Price / Fabric / Details Inquiry
+        if any(w in lower for w in ["price", "cost", "kitna", "offer", "discount", "fabric", "material", "linen", "color"]):
+            return {
+                "text": "Yeh pure 100% organic handspun linen kurta hai. Aaj festival offer mein flat ₹1,499 mein mil raha hai with free delivery aur Cash on Delivery. Kya main WhatsApp par catalog bhej doon?",
+                "thought": "Customer asked about pricing and fabric details. Highlighting the ₹1,499 offer and COD, then suggesting WhatsApp catalog.",
+                "intent": "price_inquiry",
                 "tool_called": None,
-                "outcome": "pitch_delivered",
+                "tool_args": {},
+                "outcome": "interested",
                 "call_ended": False
             }
 
-        # -------------------------------------------------------------
-        # 4. Value Proposition / Closing / Action Trigger
-        # -------------------------------------------------------------
-        if self.state == "pitch":
-            # User agrees or asks for WhatsApp / photos / links / details
-            agreed = any(w in lower for w in [
-                "haan", "yes", "whatsapp", "bhej do", "send", "details",
-                "photos", "link", "sure", "dekhna", "bhejiye", "ok", "okay",
-                "theek hai", "batao", "dekh leta hoon", "kar do"
-            ])
-            if agreed:
-                self.state = "closed"
-                self.call_ended = True
-                self.recorded_outcome = "catalog_sent"
+        # WhatsApp Catalog Request / Agreement
+        if any(w in lower for w in ["whatsapp", "bhej do", "send", "link", "photo", "haan", "yes", "sure", "dekhna"]):
+            return {
+                "text": f"Bilkul! Maine aapke WhatsApp number {self.contact_phone} par pura catalog bhej diya hai. Aap aaram se dekh lijiye, have a wonderful day!",
+                "thought": "Customer expressed interest in receiving catalog on WhatsApp. Executing send_whatsapp_catalog tool.",
+                "intent": "whatsapp_catalog_request",
+                "tool_called": "send_whatsapp_catalog",
+                "tool_args": {"phone": self.contact_phone, "message_type": "catalog"},
+                "outcome": "catalog_sent",
+                "call_ended": True
+            }
 
-                if self.tool_handler:
-                    await self.tool_handler("send_whatsapp_catalog", {
-                        "phone": self.contact_phone,
-                        "message_type": "new_drop_catalog"
-                    })
-
-                return {
-                    "text": "Bilkul! Maine aapke WhatsApp par catalog bhej diya hai, aap check kar sakte hain. Have a great day!",
-                    "tool_called": "send_whatsapp_catalog",
-                    "outcome": "catalog_sent",
-                    "call_ended": True
-                }
-
-            # User says no / declines
-            declined = any(w in lower for w in [
-                "nahi", "no", "not interested", "nahi chahiye", "rehne do",
-                "don't want", "mat bhejo", "interest nahi"
-            ])
-            if declined:
-                self.state = "closed"
-                self.call_ended = True
-                self.recorded_outcome = "not_interested"
-
-                if self.tool_handler:
-                    await self.tool_handler("set_outcome", {
-                        "outcome": "not_interested",
-                        "notes": "Customer declined new drop catalog"
-                    })
-
-                return {
-                    "text": "Koi baat nahi, thank you so much! Have a wonderful day.",
-                    "tool_called": "set_outcome",
-                    "outcome": "not_interested",
-                    "call_ended": True
-                }
-
-            # User asks specific question (price, material, etc.)
-            if any(w in lower for w in ["price", "cost", "kitna", "fabric", "material"]):
-                return {
-                    "text": "Hamara festive collection pure organic linen se bana hai aur flat Rs 1499 me mil raha hai with free delivery. Kya mai aapko WhatsApp par photos aur details bhej doon?",
-                    "tool_called": None,
-                    "outcome": "interested",
-                    "call_ended": False
-                }
-
-        # Generic courteous fallback
+        # General Courtesy / Inquiry
         return {
-            "text": "Bilkul! Maine aapke WhatsApp par catalog bhej diya hai, aap check kar sakte hain. Have a great day!",
-            "tool_called": "send_whatsapp_catalog",
-            "outcome": "catalog_sent",
-            "call_ended": True
+            "text": "Humare CURATED linen collection mein ivory, sage olive aur charcoal colors available hain, sabhi pe COD available hai. Kya aapko WhatsApp par pictures dekhni hain?",
+            "thought": "Addressing customer statement conversationally and steering towards WhatsApp catalog.",
+            "intent": "product_inquiry",
+            "tool_called": None,
+            "tool_args": {},
+            "outcome": "interested",
+            "call_ended": False
         }
 
     def generate_summary(self) -> Dict[str, Any]:
         """Generates summary and definitive outcome for the call record."""
         turns_count = len(self.history)
-        outcome = self.recorded_outcome or "catalog_sent" if turns_count > 3 else "interested"
+        outcome = self.recorded_outcome or "interested"
 
-        if outcome == "catalog_sent":
-            summary = f"Spoke with Tanmay. Qualified interest and successfully sent Curated India new drop catalog to WhatsApp ({self.contact_phone})."
+        if outcome == "order_confirmed":
+            summary = f"Spoke with {self.contact_name}. Customer placed order for CURATED Linen Kurta on Cash on Delivery."
+        elif outcome == "catalog_sent":
+            summary = f"Spoke with {self.contact_name}. Shared CURATED new drop catalog and photos on WhatsApp ({self.contact_phone})."
         elif outcome == "callback_requested":
-            summary = f"Tanmay was busy. Scheduled a callback at designated time."
+            summary = f"Spoke with {self.contact_name}. Customer requested callback at a later time."
         elif outcome == "not_interested":
-            summary = f"Tanmay politely declined product details. Wrapped up gracefully."
-        elif outcome == "wrong_number":
-            summary = "Wrong number. Call ended."
+            summary = f"Spoke with {self.contact_name}. Customer declined product offer."
+        elif outcome == "do_not_call":
+            summary = f"Spoke with {self.contact_name}. Added to Do Not Call registry."
         else:
-            summary = f"Outbound conversation held with Tanmay. Status: {outcome}."
+            summary = f"Outbound conversation held with {self.contact_name}. Status: {outcome}."
 
         return {
             "summary": summary,

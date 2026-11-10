@@ -20,7 +20,11 @@ import {
   ChevronLeft,
   ChevronRight,
   RotateCcw,
-  Radio
+  Radio,
+  BrainCircuit,
+  Sparkles,
+  Headphones,
+  Lightbulb
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ParsedCsvContact, TranscriptTurn } from "@/lib/types";
@@ -36,29 +40,30 @@ const DEFAULT_CONTACTS: ParsedCsvContact[] = [
     contact_phone: "+918454925469",
     contact_email: "tanmay@curatedindia.com",
     preferred_language: "hinglish",
-    notes: "Interested in minimalist linen kurta and new festival drop",
+    notes: "Regular customer, interested in pure organic linen kurta festival drop",
   },
   {
     contact_name: "Aarav Mehta",
     contact_phone: "+919876543210",
     contact_email: "aarav.mehta@example.com",
     preferred_language: "hindi",
-    notes: "Previous customer, likes festive ethnic wear",
+    notes: "Prefers Hindi, inquiring about festive discounts and Cash on Delivery",
   },
   {
     contact_name: "Priya Nair",
     contact_phone: "+919811223344",
     contact_email: "priya.nair@example.com",
     preferred_language: "english",
-    notes: "B2B boutique owner inquiring about wholesale orders",
+    notes: "Boutique owner inquiring about wholesale orders and size charts",
   },
 ];
 
 const SUGGESTED_RESPONSES = [
-  "Haan, product ke details aur price batao",
-  "Theek hai, ek piece Cash on Delivery pe confirm kardo",
-  "Mujhe WhatsApp pe naya catalog bhej do",
-  "Main abhi thoda busy hoon, kal dopahar ko call kar sakte ho?",
+  "Haan Shubham, batao kya offer hai aur price kitna hai?",
+  "Cash on delivery available hai kya?",
+  "Theek hai, ek Ivory colour Medium size confirm kardo COD pe",
+  "Mujhe WhatsApp pe naya catalog aur size chart bhej do",
+  "Main abhi driving kar raha hoon, kal shaam ko call karo",
   "Nahi, abhi interest nahi hai, thank you",
 ];
 
@@ -72,30 +77,41 @@ export default function SimulatorPage() {
 
   // Active Call State
   const [callState, setCallState] = useState<"idle" | "ringing" | "connected" | "ended">("idle");
+  const [dialogueState, setDialogueState] = useState<"agent_speaking" | "waiting_for_user" | "agent_thinking">("agent_speaking");
+  const [thinkingStep, setThinkingStep] = useState<string>("Analyzing response...");
   const [callDuration, setCallDuration] = useState<number>(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [callId, setCallId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
+
+  // Audio & Mic Controls
   const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
   const [isMicListening, setIsMicListening] = useState(false);
+  const [handsFreeMode, setHandsFreeMode] = useState(true);
+
+  // Agent Intelligence Metadata
+  const [lastThought, setLastThought] = useState<string | null>(null);
+  const [lastIntent, setLastIntent] = useState<string | null>(null);
   const [lastTool, setLastTool] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const thinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const currentTextRef = useRef<string>("");
 
   const currentContact = contacts[selectedIdx] || contacts[0] || DEFAULT_CONTACTS[0];
 
   // Auto-scroll transcript
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [transcript, isAgentSpeaking, sending]);
+  }, [transcript, dialogueState, sending]);
 
   // Call duration timer
   useEffect(() => {
@@ -111,9 +127,99 @@ export default function SimulatorPage() {
     };
   }, [callState]);
 
+  // Dynamic Thinking Animation Cycle
+  useEffect(() => {
+    if (dialogueState === "agent_thinking") {
+      const steps = [
+        "Analyzing customer response...",
+        "Evaluating customer intent & context...",
+        "Formulating optimal sales strategy...",
+        "Synthesizing Shubham voice (Gnani Timbre)..."
+      ];
+      let stepIdx = 0;
+      setThinkingStep(steps[0]);
+      thinkingTimerRef.current = setInterval(() => {
+        stepIdx = (stepIdx + 1) % steps.length;
+        setThinkingStep(steps[stepIdx]);
+      }, 800);
+    } else {
+      if (thinkingTimerRef.current) clearInterval(thinkingTimerRef.current);
+    }
+    return () => {
+      if (thinkingTimerRef.current) clearInterval(thinkingTimerRef.current);
+    };
+  }, [dialogueState]);
+
+  // Hands-free speech recognition starter
+  const startSpeechListening = useCallback(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) return;
+
+    try {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = currentContact.preferred_language === "english" ? "en-IN" : "hi-IN";
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsMicListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcriptText = Array.from(event.results)
+          .map((result: any) => (result as any)[0].transcript)
+          .join("");
+        setInput(transcriptText);
+        currentTextRef.current = transcriptText;
+
+        // Reset silence timer: auto-submit 1.2s after user stops talking
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => {
+          if (currentTextRef.current.trim()) {
+            handleSendTurn(currentTextRef.current.trim());
+          }
+        }, 1200);
+      };
+
+      recognition.onerror = () => {
+        setIsMicListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsMicListening(false);
+        // If text was captured before end, submit
+        if (currentTextRef.current.trim() && !sending) {
+          handleSendTurn(currentTextRef.current.trim());
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {
+      console.warn("Could not start auto speech recognition:", e);
+      setIsMicListening(false);
+    }
+  }, [currentContact.preferred_language, sending]);
+
   // Audio playback function using Base64 WAV from Gnani Timbre TTS
   const playAgentAudio = useCallback((base64Wav: string | null | undefined) => {
-    if (!base64Wav || isSpeakerMuted) return;
+    if (!base64Wav || isSpeakerMuted) {
+      setDialogueState("waiting_for_user");
+      if (handsFreeMode) {
+        setTimeout(() => startSpeechListening(), 400);
+      }
+      return;
+    }
 
     try {
       if (audioRef.current) {
@@ -121,24 +227,29 @@ export default function SimulatorPage() {
       }
       const audio = new Audio("data:audio/wav;base64," + base64Wav);
       audioRef.current = audio;
-      setIsAgentSpeaking(true);
+      setDialogueState("agent_speaking");
 
       audio.onended = () => {
-        setIsAgentSpeaking(false);
+        // Agent finished speaking: transitions to waiting for user
+        setDialogueState("waiting_for_user");
+        if (handsFreeMode) {
+          setTimeout(() => startSpeechListening(), 300);
+        }
       };
+
       audio.onerror = () => {
-        setIsAgentSpeaking(false);
+        setDialogueState("waiting_for_user");
       };
 
       audio.play().catch((err) => {
         console.warn("Autoplay notice (user interaction required):", err);
-        setIsAgentSpeaking(false);
+        setDialogueState("waiting_for_user");
       });
     } catch (e) {
       console.error("Audio playback error:", e);
-      setIsAgentSpeaking(false);
+      setDialogueState("waiting_for_user");
     }
-  }, [isSpeakerMuted]);
+  }, [isSpeakerMuted, handsFreeMode, startSpeechListening]);
 
   // Soft ringing sound generator using Web Audio API
   const playRingtone = useCallback(() => {
@@ -165,52 +276,13 @@ export default function SimulatorPage() {
     }
   }, []);
 
-  // Browser Speech Recognition for talking to Shubham
+  // Manual Mic Toggle
   const toggleSpeechRecognition = () => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setError("Speech recognition is not supported in this browser. Please type your message.");
-      return;
-    }
-
     if (isMicListening) {
       if (recognitionRef.current) recognitionRef.current.stop();
       setIsMicListening(false);
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = currentContact.preferred_language === "english" ? "en-IN" : "hi-IN";
-      recognition.continuous = false;
-      recognition.interimResults = true;
-
-      recognition.onstart = () => {
-        setIsMicListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        const transcriptText = Array.from(event.results)
-          .map((result: any) => (result as any)[0].transcript)
-          .join("");
-        setInput(transcriptText);
-      };
-
-      recognition.onerror = () => {
-        setIsMicListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsMicListening(false);
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch {
-      setError("Microphone permission denied or not available.");
-      setIsMicListening(false);
+    } else {
+      startSpeechListening();
     }
   };
 
@@ -247,7 +319,10 @@ export default function SimulatorPage() {
     setCallDuration(0);
     setTranscript([]);
     setLastTool(null);
+    setLastThought(null);
+    setLastIntent(null);
     setOutcome(null);
+    currentTextRef.current = "";
     playRingtone();
 
     try {
@@ -262,12 +337,16 @@ export default function SimulatorPage() {
       setSessionId(res.session_id);
       setCallId(res.call_id);
       setTranscript(res.transcript || []);
+      if (res.thought) setLastThought(res.thought);
+      if (res.intent) setLastIntent(res.intent);
 
-      // Small delay for realistic phone pickup transition
+      // Realistic phone pickup transition
       setTimeout(() => {
         setCallState("connected");
         if (res.audio_base64) {
           playAgentAudio(res.audio_base64);
+        } else {
+          setDialogueState("waiting_for_user");
         }
       }, 1400);
     } catch (err) {
@@ -281,15 +360,24 @@ export default function SimulatorPage() {
     const text = (userText || input).trim();
     if (!text || !sessionId || callState !== "connected" || sending) return;
 
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    currentTextRef.current = "";
     setInput("");
     setSending(true);
     setError(null);
 
-    // Stop mic if listening
-    if (isMicListening && recognitionRef.current) {
-      recognitionRef.current.stop();
+    // Stop mic while agent thinks
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
       setIsMicListening(false);
     }
+
+    // Agent enters THINKING STATE
+    setDialogueState("agent_thinking");
 
     // Immediately reflect user message in dialogue
     setTranscript((prev) => [
@@ -299,6 +387,8 @@ export default function SimulatorPage() {
 
     try {
       const res = await api.sendSimTurn(sessionId, text);
+      if (res.thought) setLastThought(res.thought);
+      if (res.intent) setLastIntent(res.intent);
       if (res.tool_called) setLastTool(res.tool_called);
       if (res.outcome) setOutcome(res.outcome);
       if (res.transcript) setTranscript(res.transcript);
@@ -306,16 +396,18 @@ export default function SimulatorPage() {
       // Play synthesized Shubham voice from Gnani Timbre TTS
       if (res.audio_base64) {
         playAgentAudio(res.audio_base64);
+      } else {
+        setDialogueState("waiting_for_user");
       }
 
       if (res.call_ended) {
         setTimeout(() => {
           setCallState("ended");
-          setIsAgentSpeaking(false);
-        }, 3000);
+        }, 3200);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to process speech turn");
+      setDialogueState("waiting_for_user");
     } finally {
       setSending(false);
     }
@@ -326,21 +418,40 @@ export default function SimulatorPage() {
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    setIsAgentSpeaking(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    setIsMicListening(false);
     setCallState("ended");
   };
 
   // Reset simulator
   const handleReset = () => {
     if (audioRef.current) audioRef.current.pause();
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
     setCallState("idle");
+    setDialogueState("agent_speaking");
     setSessionId(null);
     setCallId(null);
     setTranscript([]);
     setCallDuration(0);
     setLastTool(null);
+    setLastThought(null);
+    setLastIntent(null);
     setOutcome(null);
     setError(null);
+    currentTextRef.current = "";
+    setInput("");
   };
 
   const formatTime = (secs: number) => {
@@ -376,7 +487,7 @@ export default function SimulatorPage() {
 
       {/* Main Grid: Left Controls & CSV + Right Smartphone Simulator */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* LEFT COLUMN: CSV Upload & Contact Selector (5 cols) */}
+        {/* LEFT COLUMN: CSV Upload & Contact Selector & LLM Brain (5 cols) */}
         <div className="space-y-5 lg:col-span-5">
           {/* CSV File Dropzone Card */}
           <Card className="p-5">
@@ -425,7 +536,7 @@ export default function SimulatorPage() {
                 </label>
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
-                Supported columns: name, phone, email, language
+                Supported columns: name, phone, email, language, notes
               </p>
               {isParsingCsv && (
                 <div className="mt-2 text-xs font-medium text-navy-900 flex items-center gap-1.5">
@@ -537,32 +648,63 @@ export default function SimulatorPage() {
             </div>
           </Card>
 
-          {/* Call Metadata & Tools Info Card */}
-          {(lastTool || outcome || callId) && (
-            <Card className="p-4 space-y-2 text-xs">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="font-bold text-navy-900 uppercase tracking-wider text-[10px]">
-                  Agent Brain Activity
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  Voice: Gnani Timbre (Shubham)
+          {/* Interactive Agent Brain & Reasoning Activity */}
+          <Card className="p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-1.5">
+                <BrainCircuit className="h-4 w-4 text-emerald-600" />
+                <span className="font-bold text-navy-900 uppercase tracking-wider text-[11px]">
+                  Agent Brain Activity (Gemini LLM)
                 </span>
               </div>
-              {lastTool && (
-                <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-emerald-50/50 px-3 py-2 text-emerald-950 font-semibold">
-                  <Wrench className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>Executed Tool:</span>
-                  <code className="font-mono text-emerald-800">{lastTool}</code>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Voice: Gnani (Shubham)
+              </span>
+            </div>
+
+            {/* Live LLM Thought Display */}
+            {lastThought ? (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-1">
+                <div className="flex items-center gap-1.5 text-indigo-900 text-xs font-bold">
+                  <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+                  <span>LLM Thought Process:</span>
                 </div>
-              )}
-              {outcome && (
-                <div className="flex items-center gap-2 rounded-lg bg-navy-900 px-3 py-2 font-semibold uppercase tracking-wider text-white">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                  Outcome: {humanize(outcome)}
-                </div>
-              )}
-            </Card>
-          )}
+                <p className="text-xs text-indigo-950/90 leading-relaxed italic">
+                  &ldquo;{lastThought}&rdquo;
+                </p>
+                {lastIntent && (
+                  <div className="pt-1 flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase font-bold text-indigo-500 tracking-wider">
+                      Detected Intent:
+                    </span>
+                    <span className="rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-mono font-bold text-indigo-800">
+                      {lastIntent}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">
+                LLM reasoning, thoughts, and intent analysis will appear here in real time as the conversation progresses.
+              </p>
+            )}
+
+            {/* Tools & Outcomes */}
+            {lastTool && (
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-emerald-50/50 px-3 py-2 text-emerald-950 font-semibold text-xs">
+                <Wrench className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Executed Tool:</span>
+                <code className="font-mono text-emerald-800">{lastTool}</code>
+              </div>
+            )}
+
+            {outcome && (
+              <div className="flex items-center gap-2 rounded-lg bg-navy-900 px-3 py-2 font-semibold uppercase tracking-wider text-white text-xs">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                Outcome: {humanize(outcome)}
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* RIGHT COLUMN: Realistic Phone Screen Simulator (7 cols) */}
@@ -603,7 +745,7 @@ export default function SimulatorPage() {
                     {currentContact.contact_phone}
                   </p>
                   <p className="mt-4 text-xs text-slate-400 max-w-[240px]">
-                    Click &ldquo;Dial Contact via Simulator&rdquo; on the left to trigger the phone call.
+                    Click &ldquo;Dial Contact via Simulator&rdquo; on the left to trigger the interactive phone call.
                   </p>
                 </div>
               )}
@@ -648,27 +790,69 @@ export default function SimulatorPage() {
                     </div>
                   </div>
 
-                  {/* Audio Waveform Animation when Agent Speaks */}
-                  <div className="flex flex-col items-center justify-center py-4">
-                    <div className="flex items-center gap-1.5 h-10">
-                      {[40, 75, 50, 90, 60, 85, 45, 95, 65, 35].map((h, i) => (
-                        <div
-                          key={i}
-                          className={`w-1 rounded-full bg-emerald-400 transition-all duration-150 ${
-                            isAgentSpeaking
-                              ? "animate-pulse"
-                              : "opacity-30 h-2"
-                          }`}
-                          style={{
-                            height: isAgentSpeaking ? `${h}%` : "6px",
-                            animationDelay: `${i * 0.08}s`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <span className="mt-2 text-[11px] font-semibold text-slate-300">
-                      {isAgentSpeaking ? "Shubham is speaking..." : sending ? "Thinking..." : "Listening to you..."}
-                    </span>
+                  {/* Dynamic Turn State Visualization */}
+                  <div className="flex flex-col items-center justify-center py-3">
+                    {/* Visualizer: Agent Speaking */}
+                    {dialogueState === "agent_speaking" && (
+                      <div className="flex flex-col items-center">
+                        <div className="flex items-center gap-1.5 h-10">
+                          {[40, 75, 50, 90, 60, 85, 45, 95, 65, 35].map((h, i) => (
+                            <div
+                              key={i}
+                              className="w-1 rounded-full bg-emerald-400 animate-pulse transition-all duration-150"
+                              style={{
+                                height: `${h}%`,
+                                animationDelay: `${i * 0.08}s`,
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-950/80 px-3 py-1 text-[11px] font-semibold text-emerald-300 border border-emerald-800">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+                          Shubham is speaking...
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Visualizer: Agent Waiting for User's Response */}
+                    {dialogueState === "waiting_for_user" && (
+                      <div className="flex flex-col items-center">
+                        <div className="flex items-center gap-1.5 h-10">
+                          {[20, 20, 20, 20, 20, 20, 20, 20].map((_, i) => (
+                            <div
+                              key={i}
+                              className="w-1 h-2 rounded-full bg-slate-600 opacity-40"
+                            />
+                          ))}
+                        </div>
+                        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-950/80 px-3 py-1 text-[11px] font-semibold text-amber-300 border border-amber-800 animate-pulse">
+                          <Mic className="h-3 w-3 text-amber-400" />
+                          {isMicListening ? "Listening to you... speak now" : "Agent waiting for your response..."}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Visualizer: Agent Thinking Accordingly */}
+                    {dialogueState === "agent_thinking" && (
+                      <div className="flex flex-col items-center">
+                        <div className="flex items-center gap-1.5 h-10">
+                          {[30, 60, 45, 75, 50, 70, 40].map((h, i) => (
+                            <div
+                              key={i}
+                              className="w-1 rounded-full bg-indigo-400 animate-bounce transition-all"
+                              style={{
+                                height: `${h}%`,
+                                animationDelay: `${i * 0.12}s`,
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-indigo-950/80 px-3 py-1 text-[11px] font-semibold text-indigo-300 border border-indigo-800">
+                          <Sparkles className="h-3 w-3 text-indigo-400 animate-spin" />
+                          {thinkingStep}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Live Bubble Subtitle Box on Phone */}
@@ -699,16 +883,29 @@ export default function SimulatorPage() {
 
                   {/* Quick-reply chips */}
                   <div className="pt-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                      Quick Responses:
-                    </p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Quick Customer Replies:
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setHandsFreeMode((h) => !h)}
+                        className={`text-[10px] font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
+                          handsFreeMode ? "text-emerald-400 bg-emerald-950/60" : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <Headphones className="h-2.5 w-2.5" />
+                        {handsFreeMode ? "Hands-Free Auto-Listen: ON" : "Hands-Free: OFF"}
+                      </button>
+                    </div>
                     <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-none">
                       {SUGGESTED_RESPONSES.map((chip, idx) => (
                         <button
                           key={idx}
                           type="button"
+                          disabled={sending || dialogueState === "agent_thinking"}
                           onClick={() => handleSendTurn(chip)}
-                          className="shrink-0 rounded-full border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-slate-200 hover:bg-slate-700 hover:text-white transition-colors"
+                          className="shrink-0 rounded-full border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-slate-200 hover:bg-slate-700 hover:text-white disabled:opacity-40 transition-colors"
                         >
                           {chip}
                         </button>
@@ -735,17 +932,23 @@ export default function SimulatorPage() {
                       <input
                         type="text"
                         value={input}
-                        disabled={sending}
+                        disabled={sending || dialogueState === "agent_thinking"}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleSendTurn()}
-                        placeholder={isMicListening ? "Listening... Speak now" : "Type reply to Shubham..."}
+                        placeholder={
+                          dialogueState === "agent_thinking"
+                            ? "Shubham is thinking..."
+                            : isMicListening
+                            ? "Listening to you... speak now"
+                            : "Reply to Shubham (or speak)..."
+                        }
                         className="flex-1 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none px-2"
                       />
 
                       <button
                         type="button"
                         aria-label="Send response"
-                        disabled={!input.trim() || sending}
+                        disabled={!input.trim() || sending || dialogueState === "agent_thinking"}
                         onClick={() => handleSendTurn()}
                         className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40"
                       >

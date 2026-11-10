@@ -94,6 +94,8 @@ export interface CallSummary {
 export interface TranscriptTurn {
   speaker: "agent" | "user" | string;
   text: string;
+  thought?: string;
+  intent?: string;
   timestamp?: string;
 }
 
@@ -170,6 +172,8 @@ export interface SimulationStart {
   session_id: string;
   call_id: string;
   greeting?: string;
+  thought?: string;
+  intent?: string;
   audio_base64?: string | null;
   audio_format?: string;
   voice?: string;
@@ -178,6 +182,8 @@ export interface SimulationStart {
 
 export interface SimulationTurn {
   agent_reply?: string;
+  thought?: string;
+  intent?: string;
   audio_base64?: string | null;
   audio_format?: string;
   voice?: string;

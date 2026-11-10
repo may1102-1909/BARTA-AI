@@ -24,6 +24,7 @@ class StartSimulationRequest(BaseModel):
     contact_email: Optional[str] = "aarav.sharma@example.com"
     preferred_language: str = "hinglish"
     campaign_id: Optional[str] = None
+    notes: Optional[str] = None
 
 class UserSpeechRequest(BaseModel):
     session_id: str
@@ -60,6 +61,7 @@ async def start_simulated_call(
         phone=payload.contact_phone,
         email=payload.contact_email,
         language=payload.preferred_language,
+        notes=payload.notes,
         status="dialing"
     )
     db.add(contact)
@@ -103,6 +105,16 @@ async def start_simulated_call(
                 )
                 session.add(cb)
                 await session.commit()
+            elif tool_name == "send_whatsapp_catalog":
+                msg = Message(
+                    contact_id=contact.id,
+                    channel="whatsapp",
+                    direction="outbound",
+                    body="CURATED Minimalist Linen Kurta Drop Catalog sent to WhatsApp",
+                    status="sent"
+                )
+                session.add(msg)
+                await session.commit()
             elif tool_name == "set_outcome":
                 outcome = args.get("outcome")
                 if outcome == "do_not_call":
@@ -118,15 +130,20 @@ async def start_simulated_call(
         contact_phone=payload.contact_phone,
         contact_email=payload.contact_email,
         preferred_language=payload.preferred_language,
-        product_info=product.details if product else {},
-        campaign_goal=campaign.goal if campaign else "Sell CURATED Linen Kurta",
+        product_info=product.details if (product and product.details) else None,
+        campaign_goal=campaign.goal if campaign else "Introduce CURATED Minimalist Linen Kurta festival offer and book orders.",
+        previous_call_context=payload.notes,
         tool_handler=sim_tool_handler
     )
 
     greeting = agent.get_initial_greeting()
+    initial_thought = f"Initiating outbound call to {payload.contact_name}. Introducing CURATED India festive linen drop and checking availability."
+
     agent.history.append({
         "speaker": "agent",
         "text": greeting,
+        "thought": initial_thought,
+        "intent": "opening",
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
 
@@ -148,6 +165,8 @@ async def start_simulated_call(
         "session_id": session_id,
         "call_id": call.id,
         "greeting": greeting,
+        "thought": initial_thought,
+        "intent": "opening",
         "audio_base64": audio_base64,
         "audio_format": "audio/wav",
         "voice": "Shubham",
@@ -196,6 +215,8 @@ async def simulated_turn(
 
     return {
         "agent_reply": reply_text,
+        "thought": response.get("thought"),
+        "intent": response.get("intent"),
         "audio_base64": audio_base64,
         "audio_format": "audio/wav",
         "voice": "Shubham",
@@ -246,4 +267,3 @@ async def parse_contacts_csv(file: UploadFile = File(...)):
         "contacts": contacts,
         "count": len(contacts)
     }
-
