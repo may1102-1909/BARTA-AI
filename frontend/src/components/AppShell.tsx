@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => setMenuOpen(false), [pathname]);
 
-  if (pathname?.startsWith("/order-form")) {
+  if (pathname === "/" || pathname?.startsWith("/auth") || pathname?.startsWith("/order-form")) {
     return <main className="min-h-screen bg-white">{children}</main>;
   }
 
