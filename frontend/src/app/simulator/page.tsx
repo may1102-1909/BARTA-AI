@@ -24,7 +24,8 @@ import {
   BrainCircuit,
   Sparkles,
   Headphones,
-  Lightbulb
+  Lightbulb,
+  Globe
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ParsedCsvContact, TranscriptTurn } from "@/lib/types";
@@ -89,7 +90,8 @@ export default function SimulatorPage() {
   // Audio & Mic Controls
   const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
   const [isMicListening, setIsMicListening] = useState(false);
-  const [handsFreeMode, setHandsFreeMode] = useState(true);
+  const [speechLang, setSpeechLang] = useState<"hi-IN" | "en-IN">("hi-IN");
+  const [speechStatusText, setSpeechStatusText] = useState<string>("");
 
   // Agent Intelligence Metadata
   const [lastThought, setLastThought] = useState<string | null>(null);
@@ -98,15 +100,49 @@ export default function SimulatorPage() {
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-closure-free mutable state refs
+  const sessionIdRef = useRef<string | null>(null);
+  const callStateRef = useRef<"idle" | "ringing" | "connected" | "ended">("idle");
+  const sendingRef = useRef<boolean>(false);
+  const dialogueStateRef = useRef<"agent_speaking" | "waiting_for_user" | "agent_thinking">("agent_speaking");
+  const isAgentSpeakingRef = useRef<boolean>(false);
+  const autoSendLockRef = useRef<boolean>(false);
+  const liveTranscriptRef = useRef<string>("");
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const thinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const currentTextRef = useRef<string>("");
 
   const currentContact = contacts[selectedIdx] || contacts[0] || DEFAULT_CONTACTS[0];
+
+  // Sync state changes into refs to eliminate stale closure bugs
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
+    sendingRef.current = sending;
+  }, [sending]);
+
+  useEffect(() => {
+    dialogueStateRef.current = dialogueState;
+  }, [dialogueState]);
+
+  // Adjust default recognition language when contact changes
+  useEffect(() => {
+    if (currentContact.preferred_language === "english") {
+      setSpeechLang("en-IN");
+    } else {
+      setSpeechLang("hi-IN");
+    }
+  }, [currentContact.preferred_language]);
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -150,74 +186,19 @@ export default function SimulatorPage() {
     };
   }, [dialogueState]);
 
-  // Hands-free speech recognition starter
-  const startSpeechListening = useCallback(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) return;
-
-    try {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          // ignore
-        }
-      }
-
-      const recognition = new SpeechRecognition();
-      recognition.lang = currentContact.preferred_language === "english" ? "en-IN" : "hi-IN";
-      recognition.continuous = false;
-      recognition.interimResults = true;
-
-      recognition.onstart = () => {
-        setIsMicListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        const transcriptText = Array.from(event.results)
-          .map((result: any) => (result as any)[0].transcript)
-          .join("");
-        setInput(transcriptText);
-        currentTextRef.current = transcriptText;
-
-        // Reset silence timer: auto-submit 1.2s after user stops talking
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = setTimeout(() => {
-          if (currentTextRef.current.trim()) {
-            handleSendTurn(currentTextRef.current.trim());
-          }
-        }, 1200);
-      };
-
-      recognition.onerror = () => {
-        setIsMicListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsMicListening(false);
-        // If text was captured before end, submit
-        if (currentTextRef.current.trim() && !sending) {
-          handleSendTurn(currentTextRef.current.trim());
-        }
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (e) {
-      console.warn("Could not start auto speech recognition:", e);
-      setIsMicListening(false);
-    }
-  }, [currentContact.preferred_language, sending]);
+  // Forward declarations for clean recursive turns
+  const sendTurnDirectlyRef = useRef<((text: string) => Promise<void>) | null>(null);
+  const startSpeechListeningRef = useRef<(() => void) | null>(null);
 
   // Audio playback function using Base64 WAV from Gnani Timbre TTS
   const playAgentAudio = useCallback((base64Wav: string | null | undefined) => {
     if (!base64Wav || isSpeakerMuted) {
       setDialogueState("waiting_for_user");
-      if (handsFreeMode) {
-        setTimeout(() => startSpeechListening(), 400);
-      }
+      dialogueStateRef.current = "waiting_for_user";
+      isAgentSpeakingRef.current = false;
+      setTimeout(() => {
+        if (startSpeechListeningRef.current) startSpeechListeningRef.current();
+      }, 350);
       return;
     }
 
@@ -228,28 +209,255 @@ export default function SimulatorPage() {
       const audio = new Audio("data:audio/wav;base64," + base64Wav);
       audioRef.current = audio;
       setDialogueState("agent_speaking");
+      dialogueStateRef.current = "agent_speaking";
+      isAgentSpeakingRef.current = true;
 
       audio.onended = () => {
         // Agent finished speaking: transitions to waiting for user
+        isAgentSpeakingRef.current = false;
         setDialogueState("waiting_for_user");
-        if (handsFreeMode) {
-          setTimeout(() => startSpeechListening(), 300);
-        }
+        dialogueStateRef.current = "waiting_for_user";
+        // Directly auto-open microphone so caller can reply without touching anything!
+        setTimeout(() => {
+          if (startSpeechListeningRef.current) startSpeechListeningRef.current();
+        }, 300);
       };
 
       audio.onerror = () => {
+        isAgentSpeakingRef.current = false;
         setDialogueState("waiting_for_user");
+        dialogueStateRef.current = "waiting_for_user";
+        setTimeout(() => {
+          if (startSpeechListeningRef.current) startSpeechListeningRef.current();
+        }, 300);
       };
 
       audio.play().catch((err) => {
         console.warn("Autoplay notice (user interaction required):", err);
+        isAgentSpeakingRef.current = false;
         setDialogueState("waiting_for_user");
+        dialogueStateRef.current = "waiting_for_user";
       });
     } catch (e) {
       console.error("Audio playback error:", e);
+      isAgentSpeakingRef.current = false;
       setDialogueState("waiting_for_user");
+      dialogueStateRef.current = "waiting_for_user";
     }
-  }, [isSpeakerMuted, handsFreeMode, startSpeechListening]);
+  }, [isSpeakerMuted]);
+
+  // Direct Auto-Send Function: sends speech to agent immediately with NO hand interaction needed
+  const sendTurnDirectly = useCallback(async (spokenText: string) => {
+    const text = spokenText.trim();
+    if (!text) return;
+    if (sendingRef.current || autoSendLockRef.current) return;
+
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId || callStateRef.current !== "connected") {
+      console.warn("Cannot send speech turn: call not active or no session", {
+        sessionId: currentSessionId,
+        callState: callStateRef.current
+      });
+      return;
+    }
+
+    // Set lock
+    autoSendLockRef.current = true;
+    sendingRef.current = true;
+    setSending(true);
+    setError(null);
+    setSpeechStatusText("");
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    // Clear live speech
+    liveTranscriptRef.current = "";
+    setInput("");
+
+    // Stop mic while agent thinks and speaks
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    setIsMicListening(false);
+
+    // Enter thinking state
+    setDialogueState("agent_thinking");
+    dialogueStateRef.current = "agent_thinking";
+
+    // Immediately reflect user message in dialogue bubbles
+    setTranscript((prev) => [
+      ...prev,
+      { speaker: "user", text, timestamp: new Date().toISOString() },
+    ]);
+
+    try {
+      const res = await api.sendSimTurn(currentSessionId, text);
+      if (res.thought) setLastThought(res.thought);
+      if (res.intent) setLastIntent(res.intent);
+      if (res.tool_called) setLastTool(res.tool_called);
+      if (res.outcome) setOutcome(res.outcome);
+      if (res.transcript) setTranscript(res.transcript);
+
+      // Play synthesized Shubham voice from Gnani Timbre TTS
+      if (res.audio_base64) {
+        playAgentAudio(res.audio_base64);
+      } else {
+        setDialogueState("waiting_for_user");
+        dialogueStateRef.current = "waiting_for_user";
+        setTimeout(() => {
+          if (startSpeechListeningRef.current) startSpeechListeningRef.current();
+        }, 300);
+      }
+
+      if (res.call_ended) {
+        setTimeout(() => {
+          setCallState("ended");
+          callStateRef.current = "ended";
+        }, 3500);
+      }
+    } catch (err) {
+      console.error("Turn processing error:", err);
+      setError(err instanceof Error ? err.message : "Failed to process speech turn");
+      setDialogueState("waiting_for_user");
+      dialogueStateRef.current = "waiting_for_user";
+      setTimeout(() => {
+        if (startSpeechListeningRef.current) startSpeechListeningRef.current();
+      }, 400);
+    } finally {
+      sendingRef.current = false;
+      autoSendLockRef.current = false;
+      setSending(false);
+    }
+  }, [playAgentAudio]);
+
+  sendTurnDirectlyRef.current = sendTurnDirectly;
+
+  // Fully Automated Hands-Free Speech Recognition Starter
+  const startSpeechListening = useCallback(() => {
+    if (callStateRef.current !== "connected") return;
+    if (sendingRef.current || autoSendLockRef.current) return;
+    if (dialogueStateRef.current === "agent_speaking" || isAgentSpeakingRef.current) return;
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setError("Web Speech Recognition is not supported on this browser. Please use Chrome/Edge or type your reply.");
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = speechLang;
+      recognition.continuous = true; // Stay listening until silence is detected
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsMicListening(true);
+        liveTranscriptRef.current = "";
+        setSpeechStatusText("Listening... speak now");
+      };
+
+      recognition.onresult = (event: any) => {
+        let finalChunk = "";
+        let interimChunk = "";
+
+        for (let i = 0; i < event.results.length; ++i) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalChunk += item[0].transcript;
+          } else {
+            interimChunk += item[0].transcript;
+          }
+        }
+
+        const fullSpeech = (finalChunk + " " + interimChunk).trim();
+        if (fullSpeech) {
+          liveTranscriptRef.current = fullSpeech;
+          setInput(fullSpeech);
+          setSpeechStatusText(`Captured: "${fullSpeech}" (sending automatically...)`);
+
+          // AUTOMATIC ZERO-TOUCH SEND: When caller pauses for 950ms, auto-submit directly!
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            const captured = liveTranscriptRef.current.trim();
+            if (captured && !sendingRef.current && !autoSendLockRef.current) {
+              console.log("Zero-touch auto-sending caller speech after silence:", captured);
+              if (sendTurnDirectlyRef.current) {
+                sendTurnDirectlyRef.current(captured);
+              }
+            }
+          }, 950);
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        console.warn("Speech recognition error:", e.error);
+        if (e.error === "no-speech") {
+          return;
+        }
+        setIsMicListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsMicListening(false);
+        const captured = liveTranscriptRef.current.trim();
+        // If speech was captured when recognition ended, immediately send it!
+        if (captured && !sendingRef.current && !autoSendLockRef.current) {
+          console.log("Auto-sending caller speech on recognition finalize:", captured);
+          if (sendTurnDirectlyRef.current) {
+            sendTurnDirectlyRef.current(captured);
+          }
+        } else if (
+          callStateRef.current === "connected" &&
+          dialogueStateRef.current === "waiting_for_user" &&
+          !sendingRef.current &&
+          !isAgentSpeakingRef.current
+        ) {
+          // If ended due to browser idle timeout with no speech, seamlessly restart
+          setTimeout(() => {
+            if (
+              callStateRef.current === "connected" &&
+              dialogueStateRef.current === "waiting_for_user" &&
+              !sendingRef.current
+            ) {
+              startSpeechListening();
+            }
+          }, 250);
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn("Could not start speech recognition:", err);
+      setIsMicListening(false);
+    }
+  }, [speechLang]);
+
+  startSpeechListeningRef.current = startSpeechListening;
 
   // Soft ringing sound generator using Web Audio API
   const playRingtone = useCallback(() => {
@@ -276,10 +484,14 @@ export default function SimulatorPage() {
     }
   }, []);
 
-  // Manual Mic Toggle
+  // Manual Mic Toggle (if user wants to force-restart mic)
   const toggleSpeechRecognition = () => {
     if (isMicListening) {
-      if (recognitionRef.current) recognitionRef.current.stop();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
       setIsMicListening(false);
     } else {
       startSpeechListening();
@@ -316,13 +528,16 @@ export default function SimulatorPage() {
   const handleStartCall = async () => {
     setError(null);
     setCallState("ringing");
+    callStateRef.current = "ringing";
     setCallDuration(0);
     setTranscript([]);
     setLastTool(null);
     setLastThought(null);
     setLastIntent(null);
     setOutcome(null);
-    currentTextRef.current = "";
+    setSpeechStatusText("");
+    liveTranscriptRef.current = "";
+    autoSendLockRef.current = false;
     playRingtone();
 
     try {
@@ -335,81 +550,30 @@ export default function SimulatorPage() {
       });
 
       setSessionId(res.session_id);
+      sessionIdRef.current = res.session_id;
+
       setCallId(res.call_id);
       setTranscript(res.transcript || []);
       if (res.thought) setLastThought(res.thought);
       if (res.intent) setLastIntent(res.intent);
 
-      // Realistic phone pickup transition
+      // Transition to connected state
       setTimeout(() => {
         setCallState("connected");
+        callStateRef.current = "connected";
+
         if (res.audio_base64) {
           playAgentAudio(res.audio_base64);
         } else {
           setDialogueState("waiting_for_user");
+          dialogueStateRef.current = "waiting_for_user";
+          startSpeechListening();
         }
       }, 1400);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to initiate call simulation");
       setCallState("idle");
-    }
-  };
-
-  // Send turn to LLM & Synthesize with Gnani Shubham Voice
-  const handleSendTurn = async (userText?: string) => {
-    const text = (userText || input).trim();
-    if (!text || !sessionId || callState !== "connected" || sending) return;
-
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    currentTextRef.current = "";
-    setInput("");
-    setSending(true);
-    setError(null);
-
-    // Stop mic while agent thinks
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-      setIsMicListening(false);
-    }
-
-    // Agent enters THINKING STATE
-    setDialogueState("agent_thinking");
-
-    // Immediately reflect user message in dialogue
-    setTranscript((prev) => [
-      ...prev,
-      { speaker: "user", text, timestamp: new Date().toISOString() },
-    ]);
-
-    try {
-      const res = await api.sendSimTurn(sessionId, text);
-      if (res.thought) setLastThought(res.thought);
-      if (res.intent) setLastIntent(res.intent);
-      if (res.tool_called) setLastTool(res.tool_called);
-      if (res.outcome) setOutcome(res.outcome);
-      if (res.transcript) setTranscript(res.transcript);
-
-      // Play synthesized Shubham voice from Gnani Timbre TTS
-      if (res.audio_base64) {
-        playAgentAudio(res.audio_base64);
-      } else {
-        setDialogueState("waiting_for_user");
-      }
-
-      if (res.call_ended) {
-        setTimeout(() => {
-          setCallState("ended");
-        }, 3200);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to process speech turn");
-      setDialogueState("waiting_for_user");
-    } finally {
-      setSending(false);
+      callStateRef.current = "idle";
     }
   };
 
@@ -418,30 +582,36 @@ export default function SimulatorPage() {
     if (audioRef.current) {
       audioRef.current.pause();
     }
+    isAgentSpeakingRef.current = false;
     if (recognitionRef.current) {
       try {
+        recognitionRef.current.onend = null;
         recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     setIsMicListening(false);
     setCallState("ended");
+    callStateRef.current = "ended";
   };
 
   // Reset simulator
   const handleReset = () => {
     if (audioRef.current) audioRef.current.pause();
+    isAgentSpeakingRef.current = false;
     if (recognitionRef.current) {
       try {
+        recognitionRef.current.onend = null;
         recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     setCallState("idle");
+    callStateRef.current = "idle";
     setDialogueState("agent_speaking");
+    dialogueStateRef.current = "agent_speaking";
     setSessionId(null);
+    sessionIdRef.current = null;
     setCallId(null);
     setTranscript([]);
     setCallDuration(0);
@@ -450,7 +620,9 @@ export default function SimulatorPage() {
     setLastIntent(null);
     setOutcome(null);
     setError(null);
-    currentTextRef.current = "";
+    setSpeechStatusText("");
+    liveTranscriptRef.current = "";
+    autoSendLockRef.current = false;
     setInput("");
   };
 
@@ -791,7 +963,7 @@ export default function SimulatorPage() {
                   </div>
 
                   {/* Dynamic Turn State Visualization */}
-                  <div className="flex flex-col items-center justify-center py-3">
+                  <div className="flex flex-col items-center justify-center py-2.5">
                     {/* Visualizer: Agent Speaking */}
                     {dialogueState === "agent_speaking" && (
                       <div className="flex flex-col items-center">
@@ -814,21 +986,30 @@ export default function SimulatorPage() {
                       </div>
                     )}
 
-                    {/* Visualizer: Agent Waiting for User's Response */}
+                    {/* Visualizer: Agent Waiting for User's Spoken Response */}
                     {dialogueState === "waiting_for_user" && (
                       <div className="flex flex-col items-center">
                         <div className="flex items-center gap-1.5 h-10">
-                          {[20, 20, 20, 20, 20, 20, 20, 20].map((_, i) => (
+                          {[30, 60, 80, 50, 70, 90, 40].map((h, i) => (
                             <div
                               key={i}
-                              className="w-1 h-2 rounded-full bg-slate-600 opacity-40"
+                              className={`w-1 rounded-full transition-all duration-150 ${
+                                isMicListening ? "bg-amber-400 animate-pulse" : "bg-slate-600 opacity-40 h-2"
+                              }`}
+                              style={{
+                                height: isMicListening ? `${h}%` : "6px",
+                                animationDelay: `${i * 0.1}s`,
+                              }}
                             />
                           ))}
                         </div>
-                        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-950/80 px-3 py-1 text-[11px] font-semibold text-amber-300 border border-amber-800 animate-pulse">
-                          <Mic className="h-3 w-3 text-amber-400" />
-                          {isMicListening ? "Listening to you... speak now" : "Agent waiting for your response..."}
+                        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-950/90 px-3 py-1 text-[11px] font-bold text-amber-300 border border-amber-800 shadow-sm animate-pulse">
+                          <Mic className="h-3 w-3 text-amber-400 animate-bounce" />
+                          {speechStatusText || "Listening to you... speak now"}
                         </span>
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          (Zero-touch: auto-sends directly when you finish speaking)
+                        </p>
                       </div>
                     )}
 
@@ -857,7 +1038,7 @@ export default function SimulatorPage() {
 
                   {/* Live Bubble Subtitle Box on Phone */}
                   <div className="max-h-[160px] overflow-y-auto space-y-2 rounded-2xl bg-slate-900/90 p-3 border border-slate-800 text-xs">
-                    {transcript.slice(-3).map((turn, idx) => (
+                    {transcript.slice(-4).map((turn, idx) => (
                       <div
                         key={idx}
                         className={`flex flex-col ${
@@ -881,22 +1062,35 @@ export default function SimulatorPage() {
                     <div ref={transcriptEndRef} />
                   </div>
 
-                  {/* Quick-reply chips */}
+                  {/* Quick-reply chips & Language Selector */}
                   <div className="pt-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Quick Customer Replies:
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setHandsFreeMode((h) => !h)}
-                        className={`text-[10px] font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
-                          handsFreeMode ? "text-emerald-400 bg-emerald-950/60" : "text-slate-400 hover:text-white"
-                        }`}
-                      >
-                        <Headphones className="h-2.5 w-2.5" />
-                        {handsFreeMode ? "Hands-Free Auto-Listen: ON" : "Hands-Free: OFF"}
-                      </button>
+                    <div className="flex items-center justify-between mb-1 text-[10px]">
+                      <span className="font-bold uppercase tracking-wider text-slate-400">
+                        Quick Replies:
+                      </span>
+                      {/* Language Toggle Pill */}
+                      <div className="flex items-center gap-1 text-[10px] bg-slate-900 px-2 py-0.5 rounded-full border border-slate-800">
+                        <Globe className="h-2.5 w-2.5 text-slate-400" />
+                        <button
+                          type="button"
+                          onClick={() => setSpeechLang("hi-IN")}
+                          className={`font-semibold px-1 rounded ${
+                            speechLang === "hi-IN" ? "text-emerald-400 font-bold" : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          Hindi/Hinglish
+                        </button>
+                        <span className="text-slate-600">|</span>
+                        <button
+                          type="button"
+                          onClick={() => setSpeechLang("en-IN")}
+                          className={`font-semibold px-1 rounded ${
+                            speechLang === "en-IN" ? "text-emerald-400 font-bold" : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          English
+                        </button>
+                      </div>
                     </div>
                     <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-none">
                       {SUGGESTED_RESPONSES.map((chip, idx) => (
@@ -904,7 +1098,7 @@ export default function SimulatorPage() {
                           key={idx}
                           type="button"
                           disabled={sending || dialogueState === "agent_thinking"}
-                          onClick={() => handleSendTurn(chip)}
+                          onClick={() => sendTurnDirectly(chip)}
                           className="shrink-0 rounded-full border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-slate-200 hover:bg-slate-700 hover:text-white disabled:opacity-40 transition-colors"
                         >
                           {chip}
@@ -934,13 +1128,13 @@ export default function SimulatorPage() {
                         value={input}
                         disabled={sending || dialogueState === "agent_thinking"}
                         onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleSendTurn()}
+                        onKeyDown={(e) => e.key === "Enter" && sendTurnDirectly(input)}
                         placeholder={
                           dialogueState === "agent_thinking"
                             ? "Shubham is thinking..."
                             : isMicListening
                             ? "Listening to you... speak now"
-                            : "Reply to Shubham (or speak)..."
+                            : "Speak or type your reply..."
                         }
                         className="flex-1 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none px-2"
                       />
@@ -949,7 +1143,7 @@ export default function SimulatorPage() {
                         type="button"
                         aria-label="Send response"
                         disabled={!input.trim() || sending || dialogueState === "agent_thinking"}
-                        onClick={() => handleSendTurn()}
+                        onClick={() => sendTurnDirectly(input)}
                         className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40"
                       >
                         <Send className="h-3.5 w-3.5" />
