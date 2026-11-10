@@ -21,26 +21,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Telnyx Voice & Media Stream"])
 tts_service = GnaniTimbreTTS()
 
-def get_ngrok_host(request: Request) -> str:
-    """Extracts ngrok / public domain host without protocol."""
+def get_stream_url(request: Request) -> str:
+    """Returns the appropriate WebSocket URL (ws:// for localhost, wss:// for public domain)."""
     host = request.headers.get("host", "").strip()
-    if host and not host.startswith("localhost") and not host.startswith("127.0.0.1"):
-        return host
+    if host:
+        proto = "ws" if host.startswith("localhost") or host.startswith("127.0.0.1") else "wss"
+        return f"{proto}://{host}/stream"
     pub = settings.PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
-    return pub if pub else "unstable-roundish-giblet.ngrok-free.dev"
+    proto = "ws" if pub.startswith("localhost") or pub.startswith("127.0.0.1") else "wss"
+    return f"{proto}://{pub}/stream"
 
 @router.api_route("/answer", methods=["GET", "POST"])
 async def answer_incoming_call(request: Request):
     """
-    Telnyx hits this endpoint when your softphone dials out or incoming call arrives.
+    Telnyx or local client hits this endpoint when dialing out or incoming call arrives.
     Returns TeXML to make the agent speak first, then opens the WebSocket stream.
     """
-    ngrok_host = get_ngrok_host(request)
+    stream_url = get_stream_url(request)
     texml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="alice" language="hi-IN">Hi, main BARTA-AI se baat kar raha hoon. Bataiye, kaise madad kar sakta hoon?</Say>
     <Connect>
-        <Stream url="wss://{ngrok_host}/stream" />
+        <Stream url="{stream_url}" />
     </Connect>
 </Response>"""
     return HTMLResponse(content=texml_response, media_type="application/xml")
