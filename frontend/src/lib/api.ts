@@ -30,8 +30,9 @@ async function readError(res: Response, fallback: string) {
   }
 }
 
-export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+export async function fetchApi<T>(endpoint: string, options?: RequestInit, isInternalApi: boolean = false): Promise<T> {
+  const url = isInternalApi ? endpoint : `${API_BASE}${endpoint}`;
+  const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -109,23 +110,23 @@ export const api = {
     fetchApi<ApiMessage>(`/order-form/${token}`, { method: "POST", body: JSON.stringify(data) }),
 
   startSimulation: (data: SimulationStartInput) =>
-    fetchApi<SimulationStart>("/simulator/start", { method: "POST", body: JSON.stringify(data) }),
+    fetchApi<SimulationStart>("/api/simulator/start", { method: "POST", body: JSON.stringify(data) }, true),
   sendSimTurn: (sessionId: string, transcript: string) =>
-    fetchApi<SimulationTurn>("/simulator/turn", {
+    fetchApi<SimulationTurn>("/api/simulator/turn", {
       method: "POST",
       body: JSON.stringify({ session_id: sessionId, user_transcript: transcript }),
-    }),
+    }, true),
 
   parseSimulatorCsv: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`${API_BASE}/simulator/parse-csv`, {
+    const res = await fetch("/api/simulator/parse-csv", {
       method: "POST",
       body: formData,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to parse CSV file");
+      throw new Error(err.detail || err.error || "Failed to parse CSV file");
     }
     return res.json() as Promise<{ contacts: ParsedCsvContact[]; count: number }>;
   },

@@ -4,12 +4,19 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
-        destination: 'http://localhost:8000/:path*',
+        source: '/simulator/start',
+        destination: '/api/simulator/start',
+      },
+      {
+        source: '/simulator/turn',
+        destination: '/api/simulator/turn',
+      },
+      {
+        source: '/simulator/parse-csv',
+        destination: '/api/simulator/parse-csv',
       },
     ];
   },
 };
 
 export default nextConfig;
-
